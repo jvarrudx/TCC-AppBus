@@ -21,6 +21,15 @@ from apps.core.models import (
     Administrador,
     Aluno,
     Motorista,
+    # Fleet & Routes
+    ModeloVeiculo,
+    Onibus,
+    Rota,
+    RotaInstituicao,
+    # Transactions
+    Viagem,
+    PrevisaoViagem,
+    Embarque,
 )
 
 
@@ -137,3 +146,72 @@ class MotoristaAdmin(admin.ModelAdmin):
     list_display = ('pessoa', 'cliente', 'cnh', 'categoria_cnh', 'ativo')
     list_filter = ('cliente', 'ativo', 'categoria_cnh')
     search_fields = ('pessoa__nome', 'cnh')
+
+
+# ==============================================================================
+# 5. Frota & Rotas
+# ==============================================================================
+
+@admin.register(ModeloVeiculo)
+class ModeloVeiculoAdmin(admin.ModelAdmin):
+    list_display = ('marca', 'nome', 'ativo', 'created_at')
+    list_filter = ('ativo', 'marca')
+    search_fields = ('marca', 'nome')
+
+
+@admin.register(Onibus)
+class OnibusAdmin(admin.ModelAdmin):
+    list_display = ('placa', 'modelo', 'cliente', 'capacidade', 'qr_code_uuid', 'ativo')
+    list_filter = ('cliente', 'ativo', 'modelo')
+    search_fields = ('placa', 'qr_code_uuid')
+    readonly_fields = ('qr_code_uuid', 'created_at', 'updated_at')
+
+
+class RotaInstituicaoInline(admin.TabularInline):
+    model = RotaInstituicao
+    extra = 1
+    ordering = ('ordem_parada',)
+
+
+@admin.register(Rota)
+class RotaAdmin(admin.ModelAdmin):
+    list_display = ('nome', 'cliente', 'ativo', 'created_at')
+    list_filter = ('cliente', 'ativo')
+    search_fields = ('nome',)
+    inlines = [RotaInstituicaoInline]
+
+
+@admin.register(RotaInstituicao)
+class RotaInstituicaoAdmin(admin.ModelAdmin):
+    list_display = ('rota', 'instituicao', 'ordem_parada')
+    list_filter = ('rota__cliente', 'rota')
+    ordering = ('rota', 'ordem_parada')
+
+
+# ==============================================================================
+# 6. Eventos Transacionais & Operação
+# ==============================================================================
+
+@admin.register(Viagem)
+class ViagemAdmin(admin.ModelAdmin):
+    list_display = ('data', 'rota', 'onibus', 'motorista', 'sentido', 'status', 'hora_inicio', 'hora_fim', 'ativo')
+    list_filter = ('status', 'sentido', 'data', 'rota__cliente')
+    search_fields = ('rota__nome', 'onibus__placa', 'motorista__pessoa__nome')
+    ordering = ('-data', '-created_at')
+
+
+@admin.register(PrevisaoViagem)
+class PrevisaoViagemAdmin(admin.ModelAdmin):
+    list_display = ('data', 'aluno', 'vai_ida', 'vai_volta', 'ativo', 'created_at')
+    list_filter = ('data', 'vai_ida', 'vai_volta', 'ativo', 'aluno__cliente')
+    search_fields = ('aluno__pessoa__nome', 'aluno__matricula')
+    ordering = ('-data',)
+
+
+@admin.register(Embarque)
+class EmbarqueAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'aluno', 'viagem', 'metodo_validacao', 'ativo')
+    list_filter = ('metodo_validacao', 'ativo', 'viagem__rota__cliente')
+    search_fields = ('aluno__pessoa__nome', 'aluno__matricula', 'viagem__rota__nome')
+    ordering = ('-timestamp',)
+    readonly_fields = ('timestamp', 'created_at', 'updated_at')

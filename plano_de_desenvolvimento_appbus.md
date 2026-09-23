@@ -20,7 +20,7 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
   - Criar os modelos de Endereço (UF, Cidade, Bairro, Endereco).
   - Implementar o "Party": Tabela `Pessoa` (1:1 com `Usuario_Auth`).
   - Implementar os "Roles": Tabelas `Cliente`, `Instituicao`, `Administrador`, `Aluno` e `Motorista`.
-- [ ] **Etapa 1.5: Modelagem de Dados (Operação)**
+- [x] **Etapa 1.5: Modelagem de Dados (Operação)**
   - Criar os modelos de Frota e Rota: `Modelo_Veiculo`, `Onibus`, `Rota`, `Rota_Instituicao`.
   - Criar os modelos Transacionais: `Viagem`, `Previsao_Viagem`, `Embarque`.
   - Gerar e aplicar as migrações (`makemigrations` e `migrate`).
