@@ -3,17 +3,21 @@ Core API Views for AppBus.
 
 Architectural Guidelines (agent.md):
 - Multi-tenancy (2.1): CustomTokenObtainPairView embeds cliente_id and role.
-- Party/Role Pattern (2.2): AlunoRegistroView creates UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
-- LGPD Compliance (2.3): Legal documents list and IP/User-Agent consent capture.
+- Party/Role Pattern (2.2): AlunoRegistroView guarantees atomic creation of
+  UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
+- LGPD Compliance (2.3):
+  1. No client-supplied IP/User-Agent in payload; strictly inferred from HTTP request headers.
+  2. Legal documents list for informed consent prior to onboarding.
+  3. No plaintext passwords.
 """
 
 import logging
+from django.db import transaction, connection
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
-from django.db import connection
+from rest_framework.permissions import AllowAny
+from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.core.models import Documento_Legal, Aluno
 from apps.core.serializers import (
@@ -81,20 +85,31 @@ class AlunoRegistroView(generics.CreateAPIView):
     """
     Endpoint de Auto-Cadastro de Alunos (POST /api/auth/registro-aluno/).
     
-    Padrão Party/Role e LGPD:
-    - Executa transaction.atomic criando UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
-    - Exige consentimento explícito aos termos de uso com auditoria de IP e User-Agent.
-    - Exige CPF do responsável legal para menores de 18 anos.
+    Auditoria e Regras Arquiteturais Estritas:
+    1. LGPD: IP e User-Agent são OBRIGATORIAMENTE inferidos do objeto HTTP request
+       (nunca aceitos nem lidos do corpo JSON da requisição).
+    2. Transação Atômica: Toda a operação é executada dentro de transaction.atomic,
+       assegurando que falhas não deixem registros órfãos nas 4 tabelas envolvidas
+       (UsuarioAuth, Pessoa, Aluno, Registro_Consentimento).
+    3. Senhas Seguras: Senha criptografada via create_user() com algoritmo de hash
+       (PBKDF2/Argon2), nunca armazenada em texto puro.
     """
     permission_classes = [AllowAny]
     serializer_class = AlunoRegistroSerializer
 
+    @transaction.atomic
     def create(self, request, *args, **kwargs):
+        # Injeta estritamente o request no contexto para extração segura de IP/User-Agent
         serializer = self.get_serializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
-        aluno = serializer.save()
+        
+        try:
+            aluno = serializer.save()
+        except Exception as e:
+            logger.error(f"[Onboarding Aluno Erro] Falha crítica na transação de cadastro: {str(e)}", exc_info=True)
+            raise e
 
-        # Resposta formatada para o frontend Vue (PWA)
+        # Formatação estruturada da resposta para o cliente PWA
         response_data = {
             "mensagem": "Cadastro realizado com sucesso! Sua solicitação foi enviada para aprovação da prefeitura.",
             "aluno": AlunoDetalheResponseSerializer(aluno).data

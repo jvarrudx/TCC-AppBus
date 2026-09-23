@@ -4,13 +4,18 @@ Serializers for AppBus Core & Authentication.
 Architectural Guidelines (agent.md):
 - Multi-tenancy (2.1): All operational data partitioned by cliente_id.
 - Party/Role Pattern (2.2): Atomic transaction creating UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
-- LGPD Compliance (2.3): Mandatory consent proof (IP, User-Agent), minor age validation (responsavel_legal_cpf).
+- LGPD Compliance (2.3):
+  1. Mandatory consent proof with IP and User-Agent extracted EXCLUSIVELY from HTTP headers (never payload).
+  2. Minor age validation: mandatory responsavel_legal_cpf for age < 18.
+  3. No plaintext passwords: passwords hashed with Argon2 / PBKDF2 via create_user().
 """
 
 import logging
 from datetime import date
 from django.db import transaction
 from django.conf import settings
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError as DjangoValidationError
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.exceptions import AuthenticationFailed
@@ -35,9 +40,17 @@ logger = logging.getLogger(__name__)
 
 
 def get_client_ip(request) -> str:
-    """Extrai o endereço IP real do cliente, considerando proxies reversos."""
+    """
+    LGPD Compliance (agent.md 2.3):
+    Extrai o endereço IP real do cliente a partir dos cabeçalhos HTTP do socket ou proxy reverso.
+    Nunca aceita IP via corpo da requisição JSON (evita spoofing da prova de consentimento).
+    """
+    if not request:
+        return '127.0.0.1'
+
     x_forwarded_for = request.META.get('HTTP_X_FORWARDED_FOR')
     if x_forwarded_for:
+        # Pega o primeiro IP da cadeia (cliente real)
         ip = x_forwarded_for.split(',')[0].strip()
     else:
         ip = request.META.get('REMOTE_ADDR', '127.0.0.1')
@@ -155,18 +168,21 @@ class DocumentoLegalSerializer(serializers.ModelSerializer):
 
 
 # ==============================================================================
-# 3. ONBOARDING DE ALUNOS (Etapa 2.1 - Transação Atômica Party/Role & LGPD)
+# 3. ONBOARDING DE ALUNOS (Etapa 2.1 - Party/Role, LGPD & Transação Atômica)
 # ==============================================================================
 
 class AlunoRegistroSerializer(serializers.Serializer):
     """
     Serializer de Onboarding de Alunos.
     
-    Implementa as diretrizes arquiteturais estritas (agent.md):
-    - Party/Role Pattern (2.2): Dados civis residem em Pessoa, acesso em UsuarioAuth, papel em Aluno.
-    - Transação Atômica (2.2): Cria simultaneamente UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
-    - Multi-tenancy (2.1): Valida cliente_id e vínculo com a Instituicao de ensino.
-    - LGPD Compliance (2.3): Aceite dos termos, IP/User-Agent e CPF do responsável para menores de 18 anos.
+    Implementa as diretrizes estritas do agent.md:
+    1. Party/Role Pattern (2.2): Dados civis residem em Pessoa, credenciais em UsuarioAuth, papel em Aluno.
+    2. Transação Atômica (2.2): Cria simultaneamente UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
+    3. Multi-tenancy (2.1): Valida cliente_id e vínculo com a Instituicao de ensino.
+    4. LGPD Compliance (2.3):
+       - IP e User-Agent são OBRIGATORIAMENTE inferidos dos cabeçalhos HTTP da requisição (nunca aceitos no payload).
+       - Exige CPF do responsável legal para menores de 18 anos.
+       - Senha criptografada obrigatoriamente via UsuarioAuth.objects.create_user().
     """
     # 1. Credenciais de Acesso (UsuarioAuth)
     email = serializers.EmailField(
@@ -178,7 +194,7 @@ class AlunoRegistroSerializer(serializers.Serializer):
         required=True,
         min_length=8,
         style={'input_type': 'password'},
-        help_text="Senha de acesso com no mínimo 8 caracteres."
+        help_text="Senha de acesso (mínimo de 8 caracteres)."
     )
 
     # 2. Identidade Civil (Pessoa - Party)
@@ -197,7 +213,7 @@ class AlunoRegistroSerializer(serializers.Serializer):
         help_text="Data de nascimento para cômputo de maioridade conforme a LGPD."
     )
 
-    # 3. Endereço Residencial (Opcional no Onboarding)
+    # 3. Endereço Residencial (Opcional)
     logradouro = serializers.CharField(max_length=255, required=False, allow_blank=True)
     numero = serializers.CharField(max_length=20, required=False, allow_blank=True)
     complemento = serializers.CharField(max_length=100, required=False, allow_blank=True)
@@ -237,17 +253,28 @@ class AlunoRegistroSerializer(serializers.Serializer):
         help_text="Obrigatório pela LGPD se o titular tiver menos de 18 anos na data do cadastro."
     )
 
+    # NOTA DE SEGURANÇA LGPD:
+    # Os campos ip_address e user_agent NÃO existem neste serializer para impedir
+    # que o usuário injete ou forje evidências de consentimento no payload JSON.
+
     def validate_email(self, value):
         email_clean = value.lower().strip()
         if UsuarioAuth.objects.filter(email=email_clean).exists():
             raise serializers.ValidationError("Este endereço de e-mail já está cadastrado no sistema.")
         return email_clean
 
+    def validate_password(self, value):
+        """Valida a complexidade da senha usando os validadores do Django."""
+        try:
+            validate_password(value)
+        except DjangoValidationError as exc:
+            raise serializers.ValidationError(list(exc.messages))
+        return value
+
     def validate_cpf(self, value):
         cpf_clean = ''.join(filter(str.isdigit, value))
         if len(cpf_clean) != 11:
             raise serializers.ValidationError("O CPF deve conter exatamente 11 dígitos numéricos.")
-        # Formata no padrão canônico 000.000.000-00
         cpf_formatado = f"{cpf_clean[:3]}.{cpf_clean[3:6]}.{cpf_clean[6:9]}-{cpf_clean[9:]}"
         if Pessoa.objects.filter(cpf=cpf_formatado).exists():
             raise serializers.ValidationError("Este CPF já está cadastrado no sistema.")
@@ -305,7 +332,6 @@ class AlunoRegistroSerializer(serializers.Serializer):
                         "o fornecimento do CPF do responsável legal é obrigatório."
                     )
                 })
-            # Formata CPF do responsável
             resp_digits = ''.join(filter(str.isdigit, responsavel_cpf))
             if len(resp_digits) != 11:
                 raise serializers.ValidationError({
@@ -327,7 +353,6 @@ class AlunoRegistroSerializer(serializers.Serializer):
             ).order_by('-data_publicacao').first()
 
             if not documento:
-                # Cria documento base padrão caso seja o primeiro cadastro do sistema
                 documento = Documento_Legal.objects.create(
                     tipo=TipoDocumentoLegal.TERMOS_DE_USO,
                     versao="1.0-2026",
@@ -342,14 +367,20 @@ class AlunoRegistroSerializer(serializers.Serializer):
         """
         Execução estrita da transação atômica (agent.md 2.2):
         Garante a criação consistente e indissociável de:
-        1. UsuarioAuth
+        1. UsuarioAuth (com hash seguro de senha via create_user)
         2. Pessoa (Party)
         3. Aluno (Role)
-        4. Registro_Consentimento (LGPD)
+        4. Registro_Consentimento (LGPD com IP e User-Agent capturados da requisição HTTP)
         """
         request = self.context.get('request')
-        ip_address = get_client_ip(request) if request else '127.0.0.1'
-        user_agent = request.META.get('HTTP_USER_AGENT', 'Unknown') if request else 'Unknown'
+        if not request:
+            raise serializers.ValidationError(
+                "Falha de segurança LGPD: Objeto de requisição HTTP ausente no contexto do serializer."
+            )
+
+        # LGPD: IP e User-Agent inferidos EXCLUSIVAMENTE dos cabeçalhos HTTP
+        ip_address = get_client_ip(request)
+        user_agent = request.META.get('HTTP_USER_AGENT', 'Desconhecido')
 
         email = validated_data['email']
         password = validated_data['password']
@@ -370,8 +401,9 @@ class AlunoRegistroSerializer(serializers.Serializer):
         cep = validated_data.get('cep')
         bairro_id = validated_data.get('bairro_id')
 
+        # TRANSAÇÃO ATÔMICA: Se qualquer inserção falhar, nada é persistido
         with transaction.atomic():
-            # 1. Criação do Usuário de Autenticação
+            # 1. Criação do Usuário com HASH CRIPTOGRÁFICO DE SENHA (create_user)
             usuario = UsuarioAuth.objects.create_user(
                 email=email,
                 password=password,
@@ -424,7 +456,7 @@ class AlunoRegistroSerializer(serializers.Serializer):
             )
 
             logger.info(
-                f"[Onboarding Aluno] Cadastro concluído via transaction.atomic. "
+                f"[Onboarding Aluno] Cadastro atômico concluído com sucesso. "
                 f"Aluno ID={aluno.id}, Pessoa ID={pessoa.id}, Cliente ID={cliente.id}, "
                 f"Consentimento ID={consentimento.id}, LGPD IP={ip_address}"
             )

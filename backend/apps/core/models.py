@@ -463,6 +463,11 @@ class Registro_Consentimento(models.Model):
                 })
 
 
+# Aliases para compatibilidade PascalCase
+RegistroConsentimento = Registro_Consentimento
+DocumentoLegal = Documento_Legal
+
+
 # ==============================================================================
 # 6. MULTI-TENANCY & ROLES (agent.md 2.1, 2.2, 3)
 # ==============================================================================
