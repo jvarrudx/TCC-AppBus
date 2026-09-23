@@ -11,6 +11,7 @@ Architectural Guidelines (agent.md):
 
 from datetime import date
 from django.db import models
+from django.conf import settings
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.core.exceptions import ValidationError
 
@@ -175,7 +176,7 @@ class UsuarioAuthManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 
-class Usuario_Auth(AbstractBaseUser, PermissionsMixin):
+class UsuarioAuth(AbstractBaseUser, PermissionsMixin):
     """
     Custom User Model desacoplado de dados civis (Party/Role Pattern).
     Armazena estritamente credenciais e permissões de acesso ao sistema.
@@ -232,6 +233,10 @@ class Usuario_Auth(AbstractBaseUser, PermissionsMixin):
         self.ativo = value
 
 
+# Alias para retrocompatibilidade com agent.md
+Usuario_Auth = UsuarioAuth
+
+
 # ==============================================================================
 # 4. PARTY (Identidade Central - Party/Role Pattern)
 # ==============================================================================
@@ -239,7 +244,7 @@ class Usuario_Auth(AbstractBaseUser, PermissionsMixin):
 class Pessoa(models.Model):
     """
     Padrão Party/Role: Entidade central ('Party') que representa a identidade civil.
-    Relaciona-se 1:1 com Usuario_Auth e serve de âncora para os 'Roles'
+    Relaciona-se 1:1 com UsuarioAuth e serve de âncora para os 'Roles'
     (Aluno, Motorista, Administrador).
 
     LGPD:
@@ -247,7 +252,7 @@ class Pessoa(models.Model):
     - Suporta anonimização rigorosa via método anonimizar().
     """
     usuario = models.OneToOneField(
-        Usuario_Auth,
+        settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='pessoa',
         verbose_name="Credenciais de Acesso"

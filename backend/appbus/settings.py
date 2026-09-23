@@ -19,10 +19,10 @@ else:
     load_dotenv(BASE_DIR / '.env')
 
 # Security settings
-SECRET_KEY = os.getenv('SECRET_KEY', 'appbus-insecure-development-secret-key-change-in-production')
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or os.getenv('SECRET_KEY', 'appbus-insecure-development-secret-key-change-in-production')
+DEBUG = (os.getenv('DJANGO_DEBUG') or os.getenv('DEBUG', 'True')).lower() in ('true', '1', 't')
 
-allowed_hosts_raw = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,web,backend,0.0.0.0')
+allowed_hosts_raw = os.getenv('DJANGO_ALLOWED_HOSTS') or os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,web,backend,0.0.0.0')
 ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
 
 # Application definition
@@ -89,7 +89,7 @@ DATABASES = {
 }
 
 # Custom User Model (Etapa 1.3 - agent.md)
-AUTH_USER_MODEL = 'core.Usuario_Auth'
+AUTH_USER_MODEL = 'core.UsuarioAuth'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [

@@ -13,6 +13,8 @@ staticfiles/
 
 # Environments
 .env
+.env.*
+!.env.example
 .venv
 env/
 venv/
@@ -22,6 +24,7 @@ ENV/
 node_modules/
 dist/
 dist-ssr/
+dev-dist/
 *.local
 
 # Editor directories and files

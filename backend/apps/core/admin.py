@@ -5,7 +5,7 @@ Django Admin configurations for AppBus Core, Address Domain, Party/Role, and Rol
 from django.contrib import admin
 from apps.core.models import (
     # Auth & Party
-    Usuario_Auth,
+    UsuarioAuth,
     Pessoa,
     # Governance & LGPD
     Documento_Legal,
@@ -28,7 +28,7 @@ from apps.core.models import (
 # 1. Autenticação & Identidade Central
 # ==============================================================================
 
-@admin.register(Usuario_Auth)
+@admin.register(UsuarioAuth)
 class UsuarioAuthAdmin(admin.ModelAdmin):
     list_display = ('email', 'ativo', 'is_staff', 'is_superuser', 'data_cadastro')
     list_filter = ('ativo', 'is_staff', 'is_superuser')
