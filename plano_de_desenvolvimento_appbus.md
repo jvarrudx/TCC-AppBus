@@ -28,7 +28,7 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
 ## Fase 2: Construção da API RESTful e Lógica de Negócio
 *Foco na criação dos endpoints que o Vue.js consumirá, garantindo a segurança e o Multi-tenancy.*
 
-- [ ] **Etapa 2.1: Autenticação e Onboarding de Alunos**
+- [x] **Etapa 2.1: Autenticação e Onboarding de Alunos**
   - Criar endpoint de registro de Aluno (recebe dados pessoais, senha e aceite dos termos).
   - Implementar a transação atômica (`transaction.atomic`) para salvar nas tabelas: Usuario_Auth -> Pessoa -> Aluno -> Registro_Consentimento.
   - Configurar os endpoints de login JWT (geração e refresh de token).
