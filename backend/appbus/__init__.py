@@ -1,0 +1,3 @@
+"""
+AppBus Django Project initialization.
+"""
