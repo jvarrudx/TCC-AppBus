@@ -845,3 +845,301 @@ class AlunoOnboardingValidacoesAPITestCase(APITestCase):
         self.assertNotEqual(usuario.password, "SenhaUltraSecreta2026!")
         self.assertTrue(usuario.check_password("SenhaUltraSecreta2026!"))
         self.assertTrue(usuario.password.startswith("pbkdf2_") or usuario.password.startswith("argon2"))
+
+
+# ==============================================================================
+# 8. TESTES DE FLUXOS OPERACIONAIS CORE (Etapa 2.5 - agent.md 2.4, 2.5)
+# ==============================================================================
+
+class OperacaoCoreAPITestCase(APITestCase):
+    """
+    Testes de Fluxos Operacionais Core:
+    1. Predição de Demanda ("Vou/Não Vou") com update_or_create idempotente.
+    2. Instanciação e Conclusão de Viagens pelo motorista.
+    3. Check-in Óptico (QR Code) e Manual com proteção anti-duplicidade em transaction.atomic().
+    4. Dashboard em Tempo Real do Motorista com contagens agregadas (COUNT) no PostgreSQL.
+    """
+
+    def setUp(self):
+        # 1. Tenant e Escola
+        self.cliente = Cliente.objects.create(
+            cnpj="60.000.000/0001-60",
+            razao_social="Prefeitura Operacional",
+            nome_fantasia="Prefeitura Operacional",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Centro Tecnológico de Operações",
+            sigla="CTO",
+            ativo=True
+        )
+
+        # 2. Modelo, Frota e Rota
+        self.modelo = ModeloVeiculo.objects.create(marca="Marcopolo", nome="Paradiso 1200")
+        self.onibus = Onibus.objects.create(
+            cliente=self.cliente,
+            modelo=self.modelo,
+            placa="OPE-2026",
+            capacidade=44,
+            ativo=True
+        )
+        self.rota = Rota.objects.create(
+            cliente=self.cliente,
+            nome="Rota 01 - Universitária Expressa",
+            ativo=True
+        )
+
+        # 3. Motorista Autenticado
+        self.user_motorista = UsuarioAuth.objects.create_user(
+            email="motorista.operacao@prefeitura.gov.br",
+            password="SenhaMotorista2026!"
+        )
+        self.pessoa_motorista = Pessoa.objects.create(
+            usuario=self.user_motorista,
+            nome="Marcos Motorista Operacional",
+            cpf="789.789.789-78",
+            data_nascimento="1979-08-10"
+        )
+        self.motorista = Motorista.objects.create(
+            pessoa=self.pessoa_motorista,
+            cliente=self.cliente,
+            cnh="77889900112",
+            categoria_cnh="D",
+            ativo=True
+        )
+
+        # 4. Aluno Aprovado (Passageiro)
+        self.user_aluno = UsuarioAuth.objects.create_user(
+            email="aluno.operacao@cto.edu.br",
+            password="SenhaAluno2026!"
+        )
+        self.pessoa_aluno = Pessoa.objects.create(
+            usuario=self.user_aluno,
+            nome="Camila Estudante Operacional",
+            cpf="321.321.321-32",
+            data_nascimento="2002-12-05"
+        )
+        self.aluno = Aluno.objects.create(
+            pessoa=self.pessoa_aluno,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula="MAT-OPE-01",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+        # 5. Aluno com Cadastro Pendente (Sem Aprovação)
+        self.user_aluno_pendente = UsuarioAuth.objects.create_user(
+            email="aluno.pendente.ope@cto.edu.br",
+            password="SenhaAluno2026!"
+        )
+        self.pessoa_aluno_pendente = Pessoa.objects.create(
+            usuario=self.user_aluno_pendente,
+            nome="Pedro Aluno Pendente",
+            cpf="654.654.654-65",
+            data_nascimento="2003-01-15"
+        )
+        self.aluno_pendente = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_pendente,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula="MAT-OPE-PEND",
+            status_aprovacao=TipoStatusAprovacao.PENDENTE
+        )
+
+    def test_predicao_demanda_aluno_aprovado_update_or_create(self):
+        """
+        Aluno aprovado declara e depois atualiza intenção ('Vou/Não Vou').
+        Valida idempotência e atualização no mesmo dia sem criar duplicidades.
+        """
+        self.client.force_authenticate(user=self.user_aluno)
+        hoje = date.today()
+
+        # 1. Criação inicial da previsão
+        payload_1 = {"data": str(hoje), "vai_ida": True, "vai_volta": False}
+        resp_1 = self.client.post('/api/operacao/predicao/', payload_1, format='json')
+        self.assertEqual(resp_1.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(resp_1.data['vai_ida'])
+        self.assertFalse(resp_1.data['vai_volta'])
+
+        # 2. Atualização via PATCH para o mesmo dia
+        payload_2 = {"data": str(hoje), "vai_ida": False, "vai_volta": True}
+        resp_2 = self.client.patch('/api/operacao/predicao/', payload_2, format='json')
+        self.assertEqual(resp_2.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp_2.data['vai_ida'])
+        self.assertTrue(resp_2.data['vai_volta'])
+
+        # Comprova que a constraint unique_together (aluno, data) manteve apenas 1 registro
+        self.assertEqual(PrevisaoViagem.objects.filter(aluno=self.aluno, data=hoje).count(), 1)
+
+    def test_predicao_demanda_aluno_pendente_bloqueada(self):
+        """Aluno sem aprovação cadastral não pode registrar previsão de viagem."""
+        self.client.force_authenticate(user=self.user_aluno_pendente)
+        payload = {"data": str(date.today()), "vai_ida": True, "vai_volta": True}
+
+        response = self.client.post('/api/operacao/predicao/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("erro", response.data)
+
+    def test_motorista_inicia_viagem_com_sucesso(self):
+        """Motorista inicia viagem definindo rota, ônibus e sentido."""
+        self.client.force_authenticate(user=self.user_motorista)
+        payload = {
+            "rota_id": self.rota.id,
+            "onibus_id": self.onibus.id,
+            "sentido": SentidoViagem.IDA
+        }
+
+        response = self.client.post('/api/operacao/viagem/iniciar/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status'], StatusViagem.EM_ANDAMENTO)
+        self.assertIsNotNone(response.data['hora_inicio'])
+
+        # Validação no banco
+        viagem = Viagem.objects.get(id=response.data['id'])
+        self.assertEqual(viagem.motorista, self.motorista)
+        self.assertEqual(viagem.status, StatusViagem.EM_ANDAMENTO)
+
+    def test_motorista_bloqueado_ao_tentar_usar_rota_outro_municipio(self):
+        """Multi-tenant: Motorista não pode iniciar viagem com rota pertencente a outra prefeitura."""
+        outro_cliente = Cliente.objects.create(cnpj="91.919.919/0001-91", razao_social="Outra Prefeitura")
+        rota_alheia = Rota.objects.create(cliente=outro_cliente, nome="Rota Forasteira")
+
+        self.client.force_authenticate(user=self.user_motorista)
+        payload = {
+            "rota_id": rota_alheia.id,
+            "onibus_id": self.onibus.id,
+            "sentido": SentidoViagem.IDA
+        }
+
+        response = self.client.post('/api/operacao/viagem/iniciar/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_checkin_optico_qrcode_aluno_sucesso_e_antifraude(self):
+        """
+        Aluno escaneia o QR Code do ônibus da viagem ativa.
+        Registra o embarque e barra tentativa subsequente de duplicidade (anti-fraude).
+        """
+        # Inicia viagem para o ônibus
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+
+        self.client.force_authenticate(user=self.user_aluno)
+        payload = {"qr_code_uuid": str(self.onibus.qr_code_uuid)}
+
+        # 1. Primeiro check-in: Sucesso (201 Created)
+        resp_1 = self.client.post('/api/operacao/embarque/qrcode/', payload, format='json')
+        self.assertEqual(resp_1.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp_1.data['metodo_validacao'], MetodoValidacao.QR_CODE_APP)
+
+        # 2. Tentativa duplicada: Anti-fraude bloqueia (400 Bad Request)
+        resp_2 = self.client.post('/api/operacao/embarque/qrcode/', payload, format='json')
+        self.assertEqual(resp_2.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("erro", resp_2.data)
+
+        # Comprova que só há 1 registro no banco
+        self.assertEqual(Embarque.objects.filter(viagem=viagem, aluno=self.aluno).count(), 1)
+
+    def test_checkin_manual_motorista_sucesso_e_antifraude(self):
+        """
+        Motorista efetua check-in manual de aluno.
+        Garante bloqueio em caso de reenvio para a mesma viagem.
+        """
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.VOLTA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+
+        self.client.force_authenticate(user=self.user_motorista)
+        payload = {"viagem_id": viagem.id, "aluno_id": self.aluno.id}
+
+        # 1. Primeiro check-in manual: Sucesso
+        resp_1 = self.client.post('/api/operacao/embarque/manual/', payload, format='json')
+        self.assertEqual(resp_1.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp_1.data['metodo_validacao'], MetodoValidacao.MANUAL_MOTORISTA)
+
+        # 2. Reenvio: Anti-fraude
+        resp_2 = self.client.post('/api/operacao/embarque/manual/', payload, format='json')
+        self.assertEqual(resp_2.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_dashboard_motorista_agregacoes_em_tempo_real(self):
+        """
+        Dashboard em tempo real: valida contagem agregada de alunos previstos
+        e embarcados sem download de listas (agent.md 2.5).
+        """
+        hoje = date.today()
+        # Registra previsão positiva do aluno na IDA
+        PrevisaoViagem.objects.create(
+            aluno=self.aluno,
+            data=hoje,
+            vai_ida=True,
+            vai_volta=False
+        )
+
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=hoje,
+            hora_inicio=timezone.now()
+        )
+
+        # Registra embarque
+        Embarque.objects.create(
+            viagem=viagem,
+            aluno=self.aluno,
+            metodo_validacao=MetodoValidacao.QR_CODE_APP
+        )
+
+        self.client.force_authenticate(user=self.user_motorista)
+        url_dashboard = f'/api/operacao/viagem/{viagem.id}/dashboard/'
+
+        response = self.client.get(url_dashboard)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Asserções de Agregação
+        self.assertEqual(response.data['total_previstos'], 1)
+        self.assertEqual(response.data['total_embarcados'], 1)
+        self.assertEqual(response.data['capacidade_onibus'], 44)
+        self.assertEqual(response.data['vagas_restantes'], 43)
+        self.assertAlmostEqual(response.data['percentual_ocupacao'], round((1 / 44) * 100, 1), places=1)
+
+    def test_conclusao_de_viagem_e_bloqueio_embarque_posterior(self):
+        """Conclusão da viagem pelo motorista encerra o ciclo e impede novos embarques."""
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+
+        self.client.force_authenticate(user=self.user_motorista)
+        url_concluir = f'/api/operacao/viagem/{viagem.id}/concluir/'
+
+        response = self.client.post(url_concluir)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], StatusViagem.CONCLUIDA)
+
+        # Tentativa de embarque em viagem já concluída é bloqueada
+        self.client.force_authenticate(user=self.user_aluno)
+        payload = {"qr_code_uuid": str(self.onibus.qr_code_uuid)}
+        resp_embarque = self.client.post('/api/operacao/embarque/qrcode/', payload, format='json')
+        self.assertEqual(resp_embarque.status_code, status.HTTP_400_BAD_REQUEST)
+

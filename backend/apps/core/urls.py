@@ -16,6 +16,12 @@ from apps.core.views import (
     RotaViewSet,
     AlunoViewSet,
     AnonimizacaoContaView,
+    PredicaoDemandaView,
+    IniciarViagemView,
+    ConcluirViagemView,
+    EmbarqueQRCodeView,
+    EmbarqueManualView,
+    DashboardViagemView,
 )
 
 # Router para endpoints RESTful Multi-Tenant
@@ -37,6 +43,14 @@ urlpatterns = [
     # Governança e LGPD (Etapa 2.4 - Direito ao Esquecimento sem Hard Deletes)
     path('documentos-legais/vigentes/', DocumentoLegalVigenteListView.as_view(), name='documentos_legais_vigentes'),
     path('auth/solicitar-exclusao/', AnonimizacaoContaView.as_view(), name='solicitar_exclusao'),
+
+    # Fluxos Operacionais Core (Etapa 2.5 - Predição, Viagem, Embarque e Dashboard)
+    path('operacao/predicao/', PredicaoDemandaView.as_view(), name='operacao_predicao'),
+    path('operacao/viagem/iniciar/', IniciarViagemView.as_view(), name='operacao_viagem_iniciar'),
+    path('operacao/viagem/<int:pk>/concluir/', ConcluirViagemView.as_view(), name='operacao_viagem_concluir'),
+    path('operacao/viagem/<int:pk>/dashboard/', DashboardViagemView.as_view(), name='operacao_viagem_dashboard'),
+    path('operacao/embarque/qrcode/', EmbarqueQRCodeView.as_view(), name='operacao_embarque_qrcode'),
+    path('operacao/embarque/manual/', EmbarqueManualView.as_view(), name='operacao_embarque_manual'),
 
     # Endpoints de Gestão com Isolamento Multi-Tenant (Etapa 2.2)
     path('', include(router.urls)),

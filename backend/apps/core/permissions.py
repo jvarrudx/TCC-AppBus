@@ -90,3 +90,36 @@ class IsMotoristaOuAdmin(BasePermission):
                 return True
 
         return False
+
+
+class IsAluno(BasePermission):
+    """
+    Permite acesso exclusivamente a usuários com papel de Aluno.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser:
+            return True
+
+        return hasattr(user, 'pessoa') and hasattr(user.pessoa, 'aluno')
+
+
+class IsMotorista(BasePermission):
+    """
+    Permite acesso exclusivamente a Motoristas da frota municipal ativos.
+    """
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not user or not user.is_authenticated:
+            return False
+
+        if user.is_superuser:
+            return True
+
+        return hasattr(user, 'pessoa') and hasattr(user.pessoa, 'motorista') and user.pessoa.motorista.ativo
+

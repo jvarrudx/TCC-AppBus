@@ -38,6 +38,12 @@ from apps.core.models import (
     Onibus,
     Rota,
     RotaInstituicao,
+    Viagem,
+    PrevisaoViagem,
+    Embarque,
+    SentidoViagem,
+    StatusViagem,
+    MetodoValidacao,
 )
 
 logger = logging.getLogger(__name__)
@@ -848,6 +854,124 @@ class AnonimizacaoContaSerializer(serializers.Serializer):
         if not request.user.check_password(value):
             raise serializers.ValidationError("Senha incorreta. Não foi possível confirmar a titularidade da conta.")
         return value
+
+
+# ==============================================================================
+# 7. SERIALIZERS OPERACIONAIS CORE (Etapa 2.5 - Predição, Viagem, Embarque)
+# ==============================================================================
+
+class PrevisaoViagemSerializer(serializers.ModelSerializer):
+    """Serializer para predição de demanda estudantil ('Vou / Não Vou')."""
+    aluno_id = serializers.IntegerField(read_only=True)
+    aluno_nome = serializers.CharField(source='aluno.pessoa.nome', read_only=True)
+
+    class Meta:
+        model = PrevisaoViagem
+        fields = [
+            'id',
+            'aluno_id',
+            'aluno_nome',
+            'data',
+            'vai_ida',
+            'vai_volta',
+            'ativo',
+            'created_at',
+            'updated_at',
+        ]
+
+
+class IniciarViagemSerializer(serializers.Serializer):
+    """Payload para motorista instanciar uma viagem diária."""
+    rota_id = serializers.IntegerField(required=True)
+    onibus_id = serializers.IntegerField(required=True)
+    sentido = serializers.ChoiceField(choices=SentidoViagem.choices, required=True)
+
+
+class ViagemDetailSerializer(serializers.ModelSerializer):
+    """Serializer detalhado de uma Viagem para motorista e gestores."""
+    rota_nome = serializers.CharField(source='rota.nome', read_only=True)
+    onibus_placa = serializers.CharField(source='onibus.placa', read_only=True)
+    capacidade_onibus = serializers.IntegerField(source='onibus.capacidade', read_only=True)
+    motorista_nome = serializers.CharField(source='motorista.pessoa.nome', read_only=True)
+    sentido_display = serializers.CharField(source='get_sentido_display', read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+
+    class Meta:
+        model = Viagem
+        fields = [
+            'id',
+            'rota_id',
+            'rota_nome',
+            'onibus_id',
+            'onibus_placa',
+            'capacidade_onibus',
+            'motorista_id',
+            'motorista_nome',
+            'sentido',
+            'sentido_display',
+            'status',
+            'status_display',
+            'data',
+            'hora_inicio',
+            'hora_fim',
+            'ativo',
+            'created_at',
+        ]
+
+
+class EmbarqueQRCodeSerializer(serializers.Serializer):
+    """Payload para check-in óptico do aluno via leitura de QR Code do ônibus."""
+    qr_code_uuid = serializers.UUIDField(required=True)
+
+
+class EmbarqueManualSerializer(serializers.Serializer):
+    """Payload para check-in manual efetuado pelo motorista no app."""
+    viagem_id = serializers.IntegerField(required=True)
+    aluno_id = serializers.IntegerField(required=True)
+
+
+class EmbarqueResponseSerializer(serializers.ModelSerializer):
+    """Serializer para retorno de confirmação de embarque."""
+    aluno_nome = serializers.CharField(source='aluno.pessoa.nome', read_only=True)
+    matricula = serializers.CharField(source='aluno.matricula', read_only=True)
+    metodo_validacao_display = serializers.CharField(source='get_metodo_validacao_display', read_only=True)
+    onibus_placa = serializers.CharField(source='viagem.onibus.placa', read_only=True)
+    rota_nome = serializers.CharField(source='viagem.rota.nome', read_only=True)
+
+    class Meta:
+        model = Embarque
+        fields = [
+            'id',
+            'viagem_id',
+            'rota_nome',
+            'onibus_placa',
+            'aluno_id',
+            'aluno_nome',
+            'matricula',
+            'metodo_validacao',
+            'metodo_validacao_display',
+            'timestamp',
+        ]
+
+
+class DashboardViagemResponseSerializer(serializers.Serializer):
+    """Retorno estruturado do dashboard em tempo real do motorista."""
+    viagem_id = serializers.IntegerField()
+    rota_nome = serializers.CharField()
+    onibus_placa = serializers.CharField()
+    motorista_nome = serializers.CharField()
+    sentido = serializers.CharField()
+    sentido_display = serializers.CharField()
+    status = serializers.CharField()
+    status_display = serializers.CharField()
+    data = serializers.DateField()
+    hora_inicio = serializers.DateTimeField()
+    capacidade_onibus = serializers.IntegerField()
+    total_previstos = serializers.IntegerField()
+    total_embarcados = serializers.IntegerField()
+    vagas_restantes = serializers.IntegerField()
+    percentual_ocupacao = serializers.FloatField()
+
 
 
 

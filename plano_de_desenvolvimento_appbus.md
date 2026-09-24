@@ -39,7 +39,7 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
 - [x] **Etapa 2.4: Lógica de Privacidade (LGPD)**
   - Criar endpoint para o Aluno solicitar exclusão.
   - Implementar a lógica de Anonimização (mascarar nome, CPF, setar `anonimizado=True`, inativar usuário auth), sem usar o comando `DELETE` no banco.
-- [ ] **Etapa 2.5: Fluxos Operacionais Core (Endpoints)**
+- [x] **Etapa 2.5: Fluxos Operacionais Core (Endpoints)**
   - Endpoint para **Predição de Demanda**: Requisição PATCH para "Vou/Não Vou".
   - Endpoint de **Instanciação de Viagem**: Abertura de viagem pelo motorista.
   - Endpoints de **Embarque**:

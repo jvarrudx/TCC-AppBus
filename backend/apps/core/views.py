@@ -15,6 +15,7 @@ Architectural Guidelines (agent.md):
 """
 
 import logging
+from datetime import date
 from django.db import transaction, connection
 from django.utils import timezone
 from rest_framework import generics, viewsets, status, filters
@@ -32,13 +33,21 @@ from apps.core.models import (
     Onibus,
     Motorista,
     Rota,
+    Viagem,
+    PrevisaoViagem,
+    Embarque,
     TipoStatusAprovacao,
+    SentidoViagem,
+    StatusViagem,
+    MetodoValidacao,
 )
 from apps.core.mixins import TenantBaseViewSet, get_user_cliente
 from apps.core.permissions import (
     IsTenantAdmin,
     IsTenantAdminOrReadOnly,
     IsMotoristaOuAdmin,
+    IsAluno,
+    IsMotorista,
 )
 from apps.core.serializers import (
     CustomTokenObtainPairSerializer,
@@ -56,6 +65,13 @@ from apps.core.serializers import (
     MotoristaCreateSerializer,
     RotaCreateUpdateSerializer,
     AnonimizacaoContaSerializer,
+    PrevisaoViagemSerializer,
+    IniciarViagemSerializer,
+    ViagemDetailSerializer,
+    EmbarqueQRCodeSerializer,
+    EmbarqueManualSerializer,
+    EmbarqueResponseSerializer,
+    DashboardViagemResponseSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -415,4 +431,421 @@ class AlunoViewSet(TenantBaseViewSet):
             AlunoGestaoDetailSerializer(aluno).data,
             status=status.HTTP_200_OK
         )
+
+
+# ==============================================================================
+# 7. FLUXOS OPERACIONAIS CORE (Etapa 2.5 - agent.md 2.4, 2.5)
+# ==============================================================================
+
+class PredicaoDemandaView(APIView):
+    """
+    Endpoint de Predição de Demanda estudantil ("Vou/Não Vou").
+    Rota: /api/operacao/predicao/ (GET, POST, PATCH)
+    Permite ao aluno universitário autenticado declarar ou atualizar sua intenção
+    diária de embarque, alimentando os algoritmos de alocação de frota.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        """Retorna a previsão do aluno para a data solicitada (ou data atual)."""
+        if not hasattr(request.user, 'pessoa') or not hasattr(request.user.pessoa, 'aluno'):
+            return Response(
+                {"erro": "Acesso negado: Apenas alunos podem consultar previsão de demanda."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        aluno = request.user.pessoa.aluno
+        data_str = request.query_params.get('data')
+        if data_str:
+            try:
+                data_alvo = date.fromisoformat(data_str)
+            except ValueError:
+                return Response({"erro": "Formato de data inválido. Use AAAA-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            data_alvo = date.today()
+
+        previsao = PrevisaoViagem.objects.filter(aluno=aluno, data=data_alvo, ativo=True).first()
+        if not previsao:
+            return Response({
+                "aluno_id": aluno.id,
+                "data": data_alvo,
+                "vai_ida": False,
+                "vai_volta": False,
+                "registrado": False
+            }, status=status.HTTP_200_OK)
+
+        return Response(PrevisaoViagemSerializer(previsao).data, status=status.HTTP_200_OK)
+
+    def post(self, request, *args, **kwargs):
+        return self._salvar_predicao(request)
+
+    def patch(self, request, *args, **kwargs):
+        return self._salvar_predicao(request)
+
+    def _salvar_predicao(self, request):
+        if not hasattr(request.user, 'pessoa') or not hasattr(request.user.pessoa, 'aluno'):
+            return Response(
+                {"erro": "Acesso negado: Apenas alunos vinculados podem registrar previsão de demanda."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        aluno = request.user.pessoa.aluno
+        if aluno.status_aprovacao != TipoStatusAprovacao.APROVADO:
+            return Response(
+                {"erro": "Seu cadastro ainda não foi aprovado pela prefeitura municipal para uso do transporte."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        data_val = request.data.get('data')
+        if not data_val:
+            return Response({"data": ["O campo data é obrigatório."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            data_obj = date.fromisoformat(str(data_val))
+        except ValueError:
+            return Response({"data": ["Data inválida. Use o formato AAAA-MM-DD."]}, status=status.HTTP_400_BAD_REQUEST)
+
+        vai_ida = bool(request.data.get('vai_ida', False))
+        vai_volta = bool(request.data.get('vai_volta', False))
+
+        previsao, created = PrevisaoViagem.objects.update_or_create(
+            aluno=aluno,
+            data=data_obj,
+            defaults={
+                'vai_ida': vai_ida,
+                'vai_volta': vai_volta,
+                'ativo': True
+            }
+        )
+
+        logger.info(
+            f"[Predição de Demanda] Aluno ID={aluno.id} ({aluno.pessoa.nome}) atualizou previsão para {data_obj}: "
+            f"vai_ida={vai_ida}, vai_volta={vai_volta}."
+        )
+
+        serializer = PrevisaoViagemSerializer(previsao)
+        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class IniciarViagemView(APIView):
+    """
+    Instanciação de Viagem pelo Motorista.
+    Rota: /api/operacao/viagem/iniciar/ (POST)
+    Cria uma Viagem no status 'em_andamento', associando o ônibus, a rota e o sentido.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        motorista = None
+        if hasattr(user, 'pessoa') and hasattr(user.pessoa, 'motorista') and user.pessoa.motorista.ativo:
+            motorista = user.pessoa.motorista
+        elif user.is_superuser:
+            pass
+        else:
+            return Response(
+                {"erro": "Acesso negado: Apenas motoristas da frota municipal podem iniciar viagens."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = IniciarViagemSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        rota_id = serializer.validated_data['rota_id']
+        onibus_id = serializer.validated_data['onibus_id']
+        sentido = serializer.validated_data['sentido']
+
+        cliente = motorista.cliente if motorista else None
+
+        # Validação Multi-tenant: garante que a Rota e o Ônibus pertencem ao mesmo município
+        rota_qs = Rota.objects.filter(id=rota_id, ativo=True)
+        onibus_qs = Onibus.objects.filter(id=onibus_id, ativo=True)
+        if cliente:
+            rota_qs = rota_qs.filter(cliente=cliente)
+            onibus_qs = onibus_qs.filter(cliente=cliente)
+
+        rota = rota_qs.first()
+        if not rota:
+            return Response(
+                {"erro": "Rota informada não existe, está inativa ou pertence a outro município."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        onibus = onibus_qs.first()
+        if not onibus:
+            return Response(
+                {"erro": "Ônibus informado não existe, está inativo ou pertence a outro município."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Regra de concorrência: ônibus não pode ter duas viagens em andamento no mesmo dia
+        if Viagem.objects.filter(onibus=onibus, status=StatusViagem.EM_ANDAMENTO, data=date.today()).exists():
+            return Response(
+                {"erro": f"O ônibus de placa {onibus.placa} já possui uma viagem em andamento no dia de hoje."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        viagem = Viagem.objects.create(
+            rota=rota,
+            onibus=onibus,
+            motorista=motorista,
+            sentido=sentido,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now(),
+            ativo=True
+        )
+
+        logger.info(
+            f"[Operação Viagem] Viagem ID={viagem.id} INICIADA pelo Motorista ID={motorista.id if motorista else 'SU'} "
+            f"na Rota='{rota.nome}' com Ônibus='{onibus.placa}' no sentido='{sentido}'."
+        )
+
+        return Response(ViagemDetailSerializer(viagem).data, status=status.HTTP_201_CREATED)
+
+
+class ConcluirViagemView(APIView):
+    """
+    Encerramento operacional de uma Viagem pelo motorista ou gestor.
+    Rota: /api/operacao/viagem/<int:pk>/concluir/ (POST)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, pk=None, *args, **kwargs):
+        viagem = Viagem.objects.filter(id=pk).first()
+        if not viagem:
+            return Response({"erro": "Viagem não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Multi-tenant check
+        user_cliente = get_user_cliente(request.user)
+        if not request.user.is_superuser and user_cliente and user_cliente.id != viagem.rota.cliente_id:
+            return Response({"erro": "Acesso negado: Viagem de outro município."}, status=status.HTTP_403_FORBIDDEN)
+
+        if viagem.status != StatusViagem.EM_ANDAMENTO:
+            return Response(
+                {"erro": f"Esta viagem não pode ser concluída pois está com status '{viagem.get_status_display()}'."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        viagem.status = StatusViagem.CONCLUIDA
+        viagem.hora_fim = timezone.now()
+        viagem.save(update_fields=['status', 'hora_fim', 'updated_at'])
+
+        logger.info(f"[Operação Viagem] Viagem ID={viagem.id} CONCLUÍDA com sucesso.")
+        return Response(ViagemDetailSerializer(viagem).data, status=status.HTTP_200_OK)
+
+
+class EmbarqueQRCodeView(APIView):
+    """
+    Validação de Embarque Óptico via Leitura de QR Code pelo Aluno.
+    Rota: /api/operacao/embarque/qrcode/ (POST)
+    Localiza o ônibus pelo UUID óptico, verifica a viagem em andamento e registra o embarque.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        if not hasattr(user, 'pessoa') or not hasattr(user.pessoa, 'aluno'):
+            return Response(
+                {"erro": "Apenas alunos cadastrados podem realizar check-in por QR Code."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        aluno = user.pessoa.aluno
+        if aluno.status_aprovacao != TipoStatusAprovacao.APROVADO:
+            return Response(
+                {"erro": "Seu cadastro precisa estar aprovado pela prefeitura para validar embarques."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        serializer = EmbarqueQRCodeSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        qr_code_uuid = serializer.validated_data['qr_code_uuid']
+
+        onibus = Onibus.objects.filter(qr_code_uuid=qr_code_uuid, ativo=True).first()
+        if not onibus:
+            return Response(
+                {"erro": "QR Code inválido: nenhum veículo correspondente foi localizado ou o veículo está inativo."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Multi-tenant: Garante que o ônibus é do mesmo município do aluno
+        if onibus.cliente_id != aluno.cliente_id:
+            return Response(
+                {"erro": "Acesso negado: Este ônibus pertence a outro município."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        # Localiza a viagem em andamento para este ônibus hoje
+        viagem = Viagem.objects.filter(
+            onibus=onibus,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today()
+        ).first()
+
+        if not viagem:
+            return Response(
+                {"erro": "Não há nenhuma viagem em andamento para este ônibus no momento. Aguarde o motorista iniciar a viagem."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Anti-fraude: impede duplicidade de embarque na mesma viagem
+        if Embarque.objects.filter(viagem=viagem, aluno=aluno).exists():
+            return Response(
+                {"erro": "Embarque já registrado anteriormente nesta viagem."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        embarque = Embarque.objects.create(
+            viagem=viagem,
+            aluno=aluno,
+            metodo_validacao=MetodoValidacao.QR_CODE_APP,
+            timestamp=timezone.now(),
+            ativo=True
+        )
+
+        logger.info(
+            f"[Embarque QR Code] Aluno ID={aluno.id} ({aluno.pessoa.nome}) embarcou com sucesso no Ônibus={onibus.placa} "
+            f"na Viagem ID={viagem.id}."
+        )
+
+        return Response(EmbarqueResponseSerializer(embarque).data, status=status.HTTP_201_CREATED)
+
+
+class EmbarqueManualView(APIView):
+    """
+    Check-in Manual efetuado pelo Motorista no app.
+    Rota: /api/operacao/embarque/manual/ (POST)
+    Permite validar embarque de alunos em casos de contingência (sem bateria ou sem sinal).
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        user = request.user
+        motorista = None
+        if hasattr(user, 'pessoa') and hasattr(user.pessoa, 'motorista') and user.pessoa.motorista.ativo:
+            motorista = user.pessoa.motorista
+        elif user.is_superuser:
+            pass
+        else:
+            return Response(
+                {"erro": "Acesso negado: Apenas motoristas da frota municipal podem realizar check-in manual."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        serializer = EmbarqueManualSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        viagem_id = serializer.validated_data['viagem_id']
+        aluno_id = serializer.validated_data['aluno_id']
+
+        viagem = Viagem.objects.select_related('rota__cliente', 'onibus').filter(id=viagem_id).first()
+        if not viagem:
+            return Response({"erro": "Viagem não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        if viagem.status != StatusViagem.EM_ANDAMENTO:
+            return Response(
+                {"erro": f"Esta viagem não está em andamento (status atual: {viagem.get_status_display()})."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        if motorista and viagem.onibus.cliente_id != motorista.cliente_id:
+            return Response(
+                {"erro": "Acesso negado: Esta viagem pertence a outro município."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+
+        aluno = Aluno.objects.filter(id=aluno_id, cliente=viagem.rota.cliente).first()
+        if not aluno:
+            return Response(
+                {"erro": "Aluno não encontrado ou não pertence ao município desta viagem."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        # Anti-fraude: impede duplicidade
+        if Embarque.objects.filter(viagem=viagem, aluno=aluno).exists():
+            return Response(
+                {"erro": f"O aluno {aluno.pessoa.nome} já possui embarque registrado nesta viagem."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        embarque = Embarque.objects.create(
+            viagem=viagem,
+            aluno=aluno,
+            metodo_validacao=MetodoValidacao.MANUAL_MOTORISTA,
+            timestamp=timezone.now(),
+            ativo=True
+        )
+
+        logger.info(
+            f"[Embarque Manual] Motorista registrou embarque manual para Aluno ID={aluno.id} "
+            f"na Viagem ID={viagem.id}."
+        )
+
+        return Response(EmbarqueResponseSerializer(embarque).data, status=status.HTTP_201_CREATED)
+
+
+class DashboardViagemView(APIView):
+    """
+    Dashboard em Tempo Real do Motorista (agent.md 2.5 Performance Constraints).
+    Rota: /api/operacao/viagem/<int:pk>/dashboard/ (GET)
+    Executa agregações diretas via COUNT() no banco de dados sem trafegar listas no frontend.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, pk=None, *args, **kwargs):
+        viagem = Viagem.objects.select_related(
+            'rota__cliente',
+            'onibus',
+            'motorista__pessoa'
+        ).filter(id=pk).first()
+
+        if not viagem:
+            return Response({"erro": "Viagem não encontrada."}, status=status.HTTP_404_NOT_FOUND)
+
+        # Isolamento Multi-tenant
+        user_cliente = get_user_cliente(request.user)
+        if not request.user.is_superuser and user_cliente and user_cliente.id != viagem.rota.cliente_id:
+            return Response({"erro": "Acesso negado: Viagem pertencente a outro município."}, status=status.HTTP_403_FORBIDDEN)
+
+        # Agregações diretas no PostgreSQL (agent.md 2.5)
+        total_embarcados = viagem.embarques.filter(ativo=True).count()
+
+        # Contagem de alunos com intenção confirmada para a data e sentido da viagem
+        predicoes_qs = PrevisaoViagem.objects.filter(
+            data=viagem.data,
+            aluno__cliente=viagem.rota.cliente,
+            ativo=True
+        )
+        if viagem.sentido == SentidoViagem.IDA:
+            total_previstos = predicoes_qs.filter(vai_ida=True).count()
+        else:
+            total_previstos = predicoes_qs.filter(vai_volta=True).count()
+
+        capacidade = viagem.onibus.capacidade
+        vagas_restantes = max(0, capacidade - total_embarcados)
+        ocupacao = round((total_embarcados / capacidade) * 100, 1) if capacidade > 0 else 0.0
+
+        dados_dashboard = {
+            "viagem_id": viagem.id,
+            "rota_nome": viagem.rota.nome,
+            "onibus_placa": viagem.onibus.placa,
+            "motorista_nome": viagem.motorista.pessoa.nome if viagem.motorista else "Não atribuído",
+            "sentido": viagem.sentido,
+            "sentido_display": viagem.get_sentido_display(),
+            "status": viagem.status,
+            "status_display": viagem.get_status_display(),
+            "data": viagem.data,
+            "hora_inicio": viagem.hora_inicio,
+            "capacidade_onibus": capacidade,
+            "total_previstos": total_previstos,
+            "total_embarcados": total_embarcados,
+            "vagas_restantes": vagas_restantes,
+            "percentual_ocupacao": ocupacao,
+        }
+
+        return Response(DashboardViagemResponseSerializer(dados_dashboard).data, status=status.HTTP_200_OK)
+
 
