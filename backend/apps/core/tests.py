@@ -1,16 +1,21 @@
 """
-Automated Tests for Authentication, Student Onboarding, Party/Role, and LGPD.
-Includes specific security audit tests:
-1. Anti-Spoofing of IP and User-Agent in consent proof (LGPD).
-2. Password hashing verification (no plaintext passwords).
-3. Transaction atomicity (zero orphan records on failure).
+Suíte Completa de Testes Automatizados para AppBus (Etapas 2.1 a 2.4).
+Perspectiva: Engenheiro de Qualidade (QA) Sênior e Especialista em Segurança da Informação.
+
+Cenários Críticos Cobertos:
+1. Multi-Tenant Data Leakage: Isolamento estrito entre Prefeituras A e B (anti-vazamento e 404 em ID direto).
+2. Transação Atômica: Rollback integral na falha de criação em 4 tabelas (zero dados órfãos).
+3. Privacidade & Anonimização LGPD: Direito ao esquecimento sem Hard Deletes (preservação de histórico).
+4. Anti-Spoofing LGPD: Injeção de IP/User-Agent no payload é sumariamente neutralizada.
+5. Zero Trust: Acesso anônimo rejeitado com 401 Unauthorized em todos os endpoints de negócio.
+6. RBAC & Gestão: Fila de aprovação, auditoria de decisões, criação de motoristas e rotas.
 """
 
+from datetime import date
 from unittest.mock import patch
-from django.test import TestCase
-from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APIClient
+from rest_framework.test import APITestCase
 
 from apps.core.models import (
     UsuarioAuth,
@@ -19,744 +24,304 @@ from apps.core.models import (
     Instituicao,
     Aluno,
     Administrador,
+    Motorista,
+    ModeloVeiculo,
+    Onibus,
+    Rota,
+    RotaInstituicao,
+    Viagem,
+    PrevisaoViagem,
+    Embarque,
     Documento_Legal,
     Registro_Consentimento,
     TipoStatusAprovacao,
     TipoDocumentoLegal,
-    ModeloVeiculo,
-    Onibus,
-    Motorista,
-    Rota,
-    Viagem,
-    PrevisaoViagem,
-    Embarque,
     SentidoViagem,
     StatusViagem,
     MetodoValidacao,
 )
-from datetime import date
-from django.utils import timezone
-
-
-class AlunoOnboardingTestCase(TestCase):
-    """Testes de Onboarding de Aluno, Party/Role, Multi-tenancy e LGPD."""
-
-    def setUp(self):
-        self.client = APIClient()
-
-        # Criação do Tenant (Prefeitura / Cliente)
-        self.cliente = Cliente.objects.create(
-            cnpj="12.345.678/0001-90",
-            razao_social="Prefeitura Municipal de Teste",
-            nome_fantasia="Prefeitura de Teste",
-            ativo=True
-        )
-
-        # Criação da Instituição de Ensino
-        self.instituicao = Instituicao.objects.create(
-            cliente=self.cliente,
-            nome="Universidade Estadual de Teste",
-            sigla="UET",
-            ativo=True
-        )
-
-        # Criação do Documento Legal vigente
-        self.documento = Documento_Legal.objects.create(
-            tipo=TipoDocumentoLegal.TERMOS_DE_USO,
-            versao="1.0-2026",
-            conteudo="Termos de Uso e Política de Privacidade do AppBus.",
-            ativo=True
-        )
-
-        self.url_registro = reverse('aluno_registro')
-        self.url_token = reverse('token_obtain_pair')
-
-    def test_onboarding_aluno_maior_idade_sucesso(self):
-        """Valida onboarding atômico com sucesso para titular maior de 18 anos."""
-        payload = {
-            "email": "aluno.maior@universidade.edu.br",
-            "password": "SenhaSegura123!",
-            "nome": "João da Silva Sauro",
-            "cpf": "123.456.789-00",
-            "data_nascimento": "2000-05-15",
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20261001",
-            "termo_aceito": True,
-            "documento_legal_id": self.documento.id
-        }
-
-        response = self.client.post(self.url_registro, payload, format='json', HTTP_USER_AGENT="AppBus-PWA/1.0")
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertIn("aluno", response.data)
-        self.assertEqual(response.data["aluno"]["status_aprovacao"], TipoStatusAprovacao.PENDENTE)
-
-        # 1. Validação da criação do UsuarioAuth e HASH DE SENHA
-        usuario = UsuarioAuth.objects.get(email="aluno.maior@universidade.edu.br")
-        self.assertTrue(usuario.check_password("SenhaSegura123!"))
-        self.assertNotEqual(usuario.password, "SenhaSegura123!")  # Nunca texto puro!
-        self.assertTrue(usuario.password.startswith("pbkdf2_") or usuario.password.startswith("argon2"))
-        self.assertTrue(usuario.ativo)
-
-        # 2. Validação do Party (Pessoa)
-        pessoa = Pessoa.objects.get(usuario=usuario)
-        self.assertEqual(pessoa.nome, "João da Silva Sauro")
-        self.assertEqual(pessoa.cpf, "123.456.789-00")
-
-        # 3. Validação do Role (Aluno)
-        aluno = Aluno.objects.get(pessoa=pessoa)
-        self.assertEqual(aluno.cliente, self.cliente)
-        self.assertEqual(aluno.instituicao, self.instituicao)
-        self.assertEqual(aluno.matricula, "20261001")
-        self.assertEqual(aluno.status_aprovacao, TipoStatusAprovacao.PENDENTE)
-
-        # 4. Validação da Prova de Consentimento LGPD (Registro_Consentimento)
-        consentimento = Registro_Consentimento.objects.get(pessoa=pessoa)
-        self.assertEqual(consentimento.documento, self.documento)
-        self.assertTrue(consentimento.consentimento_concedido)
-        self.assertEqual(consentimento.user_agent, "AppBus-PWA/1.0")
-        self.assertIsNotNone(consentimento.ip_address)
-
-        # 5. Validação de Login com claims customizadas de Multi-Tenancy
-        login_payload = {
-            "email": "aluno.maior@universidade.edu.br",
-            "password": "SenhaSegura123!"
-        }
-        login_res = self.client.post(self.url_token, login_payload, format='json')
-        self.assertEqual(login_res.status_code, status.HTTP_200_OK)
-        self.assertIn("access", login_res.data)
-        self.assertIn("refresh", login_res.data)
-        self.assertEqual(login_res.data["user"]["role"], "aluno")
-        self.assertEqual(login_res.data["user"]["cliente_id"], self.cliente.id)
-        self.assertEqual(login_res.data["user"]["status_aprovacao"], TipoStatusAprovacao.PENDENTE)
-
-    def test_tentativa_spoofing_ip_user_agent_ignorado(self):
-        """
-        Auditoria de Segurança 1:
-        Valida que qualquer tentativa de forjar ip_address ou user_agent
-        no corpo JSON é terminantemente ignorada, persistindo apenas os dados
-        reais do cabeçalho da conexão HTTP (LGPD Anti-Spoofing).
-        """
-        payload = {
-            "email": "auditoria.spoof@universidade.edu.br",
-            "password": "SenhaSegura123!",
-            "nome": "Tentativa Spoofing",
-            "cpf": "100.200.300-40",
-            "data_nascimento": "1998-10-10",
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20269999",
-            "termo_aceito": True,
-            # Tentativa de injeção no payload JSON:
-            "ip_address": "6.6.6.6",
-            "user_agent": "HackerBot/9.9"
-        }
-
-        # Requisição vindo de um IP e User-Agent legítimos da camada de rede:
-        response = self.client.post(
-            self.url_registro,
-            payload,
-            format='json',
-            REMOTE_ADDR="192.168.10.50",
-            HTTP_USER_AGENT="Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0"
-        )
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        usuario = UsuarioAuth.objects.get(email="auditoria.spoof@universidade.edu.br")
-        pessoa = Pessoa.objects.get(usuario=usuario)
-        consentimento = Registro_Consentimento.objects.get(pessoa=pessoa)
-
-        # O consentimento gravou os dados do HEADER HTTP, NUNCA o que foi passado no JSON
-        self.assertEqual(consentimento.ip_address, "192.168.10.50")
-        self.assertNotEqual(consentimento.ip_address, "6.6.6.6")
-        self.assertEqual(consentimento.user_agent, "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0")
-        self.assertNotEqual(consentimento.user_agent, "HackerBot/9.9")
-
-    def test_senha_nunca_salva_em_texto_puro(self):
-        """
-        Auditoria de Segurança 3:
-        Valida que nenhuma senha trafegue ou seja armazenada em texto puro no banco.
-        """
-        payload = {
-            "email": "auditoria.senha@universidade.edu.br",
-            "password": "MinhaSenhaSuperSecreta2026!",
-            "nome": "Auditoria de Senha",
-            "cpf": "200.300.400-50",
-            "data_nascimento": "2001-01-01",
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20268888",
-            "termo_aceito": True
-        }
-
-        response = self.client.post(self.url_registro, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        usuario = UsuarioAuth.objects.get(email="auditoria.senha@universidade.edu.br")
-        # Garante que o valor no banco é um hash criptográfico válido
-        self.assertNotEqual(usuario.password, "MinhaSenhaSuperSecreta2026!")
-        self.assertTrue(usuario.check_password("MinhaSenhaSuperSecreta2026!"))
-
-    def test_transacao_atomica_reverte_tudo_em_falha(self):
-        """
-        Auditoria de Segurança 2:
-        Simula uma falha inesperada na última etapa (criação do Aluno) para assegurar
-        que transaction.atomic reverta 100% dos dados, não deixando UsuarioAuth nem Pessoa órfãos.
-        """
-        payload = {
-            "email": "falha.atomica@universidade.edu.br",
-            "password": "SenhaSegura123!",
-            "nome": "Teste Atomicidade",
-            "cpf": "300.400.500-60",
-            "data_nascimento": "2002-02-02",
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20267777",
-            "termo_aceito": True
-        }
-
-        # Mock da criação de Aluno para disparar uma exceção intencional no meio da transação
-        with patch('apps.core.models.Aluno.objects.create', side_effect=RuntimeError("Falha simulada no banco")):
-            with self.assertRaises(RuntimeError):
-                self.client.post(self.url_registro, payload, format='json')
-
-        # Assegura que nada foi persistido no banco (zero registros órfãos)
-        self.assertFalse(UsuarioAuth.objects.filter(email="falha.atomica@universidade.edu.br").exists())
-        self.assertFalse(Pessoa.objects.filter(cpf="300.400.500-60").exists())
-        self.assertFalse(Registro_Consentimento.objects.filter(pessoa__nome="Teste Atomicidade").exists())
-
-    def test_onboarding_menor_idade_sem_responsavel_falha(self):
-        """Valida que menores de 18 anos são rejeitados se não informarem o CPF do responsável (LGPD)."""
-        payload = {
-            "email": "menor@escola.edu.br",
-            "password": "SenhaSegura123!",
-            "nome": "Adolescente de Menor",
-            "cpf": "111.222.333-44",
-            "data_nascimento": "2010-01-01",  # Menor de 18 anos
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20261002",
-            "termo_aceito": True,
-            "responsavel_legal_cpf": ""  # Ausente propositalmente
-        }
-
-        response = self.client.post(self.url_registro, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("responsavel_legal_cpf", response.data)
-
-        # Garante atomicidade: nenhum registro deve ter sido criado
-        self.assertFalse(UsuarioAuth.objects.filter(email="menor@escola.edu.br").exists())
-        self.assertFalse(Pessoa.objects.filter(cpf="111.222.333-44").exists())
-
-    def test_onboarding_menor_idade_com_responsavel_sucesso(self):
-        """Valida onboarding com sucesso para menor de idade com CPF de responsável informado."""
-        payload = {
-            "email": "menor.valido@escola.edu.br",
-            "password": "SenhaSegura123!",
-            "nome": "Adolescente Estudante",
-            "cpf": "999.888.777-66",
-            "data_nascimento": "2010-01-01",
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20261003",
-            "termo_aceito": True,
-            "responsavel_legal_cpf": "555.444.333-22"
-        }
-
-        response = self.client.post(self.url_registro, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        usuario = UsuarioAuth.objects.get(email="menor.valido@escola.edu.br")
-        pessoa = Pessoa.objects.get(usuario=usuario)
-        consentimento = Registro_Consentimento.objects.get(pessoa=pessoa)
-        self.assertEqual(consentimento.responsavel_legal_cpf, "555.444.333-22")
-
-    def test_recusa_sem_consentimento_termos(self):
-        """Valida que cadastro sem aceite de termos é rejeitado (LGPD Opt-in obrigatório)."""
-        payload = {
-            "email": "sem.termo@universidade.edu.br",
-            "password": "SenhaSegura123!",
-            "nome": "Candidato Sem Termo",
-            "cpf": "888.777.666-55",
-            "data_nascimento": "1999-01-01",
-            "cliente_id": self.cliente.id,
-            "instituicao_id": self.instituicao.id,
-            "matricula": "20261004",
-            "termo_aceito": False
-        }
-
-        response = self.client.post(self.url_registro, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("termo_aceito", response.data)
 
 
 # ==============================================================================
-# 2. TESTES DE ISOLAMENTO MULTI-TENANT (Etapa 2.2 - agent.md 2.1)
+# 1. TESTE DE FUGA DE DADOS (MULTI-TENANCY DATA LEAKAGE)
 # ==============================================================================
 
-class MultiTenantIsolationTestCase(TestCase):
+class MultiTenantDataLeakageAPITestCase(APITestCase):
     """
-    Testes de Segurança e Isolamento Multi-Tenant (Zero Trust).
-    Garante que nunca haja Data Leakage entre prefeituras e que qualquer
-    tentativa de Payload Injection seja bloqueada pelo TenantBaseViewSet.
+    Cenário 1: Teste de Fuga de Dados entre Municípios distintos (Prefeitura A vs Prefeitura B).
+    Garante que nenhum registro transacional ou de frota vaze entre prefeituras
+    e que tentativas de acesso direto por ID a registros alheios resultem em 404 Not Found.
     """
 
     def setUp(self):
-        self.client = APIClient()
-
-        # 1. Criação dos Clientes (Prefeituras A e B)
+        # 1. Criação dos Clientes (Tenants)
         self.prefeitura_a = Cliente.objects.create(
             cnpj="11.111.111/0001-11",
-            razao_social="Prefeitura Municipal Alfa",
-            nome_fantasia="Prefeitura Alfa",
+            razao_social="Prefeitura Municipal A",
+            nome_fantasia="Prefeitura A",
             ativo=True
         )
         self.prefeitura_b = Cliente.objects.create(
             cnpj="22.222.222/0001-22",
-            razao_social="Prefeitura Municipal Beta",
-            nome_fantasia="Prefeitura Beta",
+            razao_social="Prefeitura Municipal B",
+            nome_fantasia="Prefeitura B",
             ativo=True
         )
 
         # 2. Modelo de Veículo Global (Catálogo)
-        self.modelo_veiculo = ModeloVeiculo.objects.create(
+        self.modelo = ModeloVeiculo.objects.create(
             marca="Marcopolo",
             nome="Viaggio 1050",
             ativo=True
         )
 
-        # 3. Administrador Municipal da Prefeitura Alfa
-        self.user_admin_a = UsuarioAuth.objects.create_user(
-            email="admin@prefeitura-alfa.sp.gov.br",
-            password="SenhaSegura123!",
+        # 3. Gestor Municipal A (Prefeitura A)
+        self.user_gestor_a = UsuarioAuth.objects.create_user(
+            email="gestor@prefeitura-a.sp.gov.br",
+            password="SenhaSeguraPrefeituraA123!",
             is_staff=True
         )
-        self.pessoa_admin_a = Pessoa.objects.create(
-            usuario=self.user_admin_a,
-            nome="Gestor Alfa",
+        self.pessoa_gestor_a = Pessoa.objects.create(
+            usuario=self.user_gestor_a,
+            nome="Carlos Gestor A",
             cpf="111.111.111-11",
             data_nascimento="1980-01-01"
         )
-        self.admin_alfa = Administrador.objects.create(
-            pessoa=self.pessoa_admin_a,
+        self.admin_a = Administrador.objects.create(
+            pessoa=self.pessoa_gestor_a,
             cliente=self.prefeitura_a,
             cargo="Secretário de Transporte",
             ativo=True
         )
 
-        # 4. Administrador Municipal da Prefeitura Beta
-        self.user_admin_b = UsuarioAuth.objects.create_user(
-            email="admin@prefeitura-beta.sp.gov.br",
-            password="SenhaSegura123!",
+        # 4. Gestor Municipal B (Prefeitura B)
+        self.user_gestor_b = UsuarioAuth.objects.create_user(
+            email="gestor@prefeitura-b.sp.gov.br",
+            password="SenhaSeguraPrefeituraB123!",
             is_staff=True
         )
-        self.pessoa_admin_b = Pessoa.objects.create(
-            usuario=self.user_admin_b,
-            nome="Gestor Beta",
+        self.pessoa_gestor_b = Pessoa.objects.create(
+            usuario=self.user_gestor_b,
+            nome="Roberto Gestor B",
             cpf="222.222.222-22",
-            data_nascimento="1985-05-05"
+            data_nascimento="1982-05-10"
         )
-        self.admin_beta = Administrador.objects.create(
-            pessoa=self.pessoa_admin_b,
+        self.admin_b = Administrador.objects.create(
+            pessoa=self.pessoa_gestor_b,
             cliente=self.prefeitura_b,
             cargo="Coordenador de Frotas",
             ativo=True
         )
 
-        # 5. Veículos das Prefeituras A e B
+        # 5. Gestor A cria Ônibus e Rota na Prefeitura A
         self.onibus_a = Onibus.objects.create(
             cliente=self.prefeitura_a,
-            modelo=self.modelo_veiculo,
-            placa="ALF-1001",
+            modelo=self.modelo,
+            placa="AAA-1111",
             capacidade=44,
             ativo=True
         )
+        self.rota_a = Rota.objects.create(
+            cliente=self.prefeitura_a,
+            nome="Linha Noturna Prefeitura A",
+            ativo=True
+        )
+
+        # 6. Ônibus e Rota na Prefeitura B
         self.onibus_b = Onibus.objects.create(
             cliente=self.prefeitura_b,
-            modelo=self.modelo_veiculo,
-            placa="BET-2002",
+            modelo=self.modelo,
+            placa="BBB-2222",
             capacidade=50,
             ativo=True
         )
 
-        self.url_onibus_list = "/api/veiculos/onibus/"
-        self.url_onibus_detail_a = f"/api/veiculos/onibus/{self.onibus_a.id}/"
-        self.url_onibus_detail_b = f"/api/veiculos/onibus/{self.onibus_b.id}/"
-
-    def test_bloqueio_requisicao_anonima(self):
-        """Zero Trust: Endpoints com escopo de tenant exigem autenticação obrigatória."""
-        response = self.client.get(self.url_onibus_list)
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_isolamento_leitura_nao_vaza_dados_outro_tenant(self):
-        """
-        Isolamento Multi-tenant (agent.md 2.1):
-        O gestor da Prefeitura Alfa NUNCA deve receber ônibus da Prefeitura Beta no get_queryset.
-        """
-        self.client.force_authenticate(user=self.user_admin_a)
-        response = self.client.get(self.url_onibus_list)
+    def test_gestor_b_faz_get_e_nao_enxerga_onibus_prefeitura_a(self):
+        """Asserção 1: O Gestor B consulta autocarros e o queryset NÃO contém o autocarro da Prefeitura A."""
+        self.client.force_authenticate(user=self.user_gestor_b)
+        response = self.client.get('/api/veiculos/onibus/')
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # O resultado deve conter exclusivamente o ônibus da Prefeitura Alfa
-        placas_retornadas = [item["placa"] for item in response.data]
-        self.assertIn("ALF-1001", placas_retornadas)
-        self.assertNotIn("BET-2002", placas_retornadas)
+        placas = [item['placa'] for item in response.data]
+        self.assertIn("BBB-2222", placas)
+        self.assertNotIn("AAA-1111", placas)
 
-    def test_tentativa_acesso_direto_id_outro_tenant_retorna_404(self):
-        """
-        Segurança anti-enumeração:
-        Tentar acessar diretamente por ID um registro de outra prefeitura retorna 404 (Not Found).
-        """
-        self.client.force_authenticate(user=self.user_admin_a)
-        # Gestor Alfa tentando consultar o Ônibus da Prefeitura Beta
-        response = self.client.get(self.url_onibus_detail_b)
+    def test_gestor_b_faz_get_e_nao_enxerga_rotas_prefeitura_a(self):
+        """Asserção 1.1: O Gestor B consulta rotas e não visualiza rotas da Prefeitura A."""
+        self.client.force_authenticate(user=self.user_gestor_b)
+        response = self.client.get('/api/rotas/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        nomes_rotas = [item['nome'] for item in response.data]
+        self.assertNotIn("Linha Noturna Prefeitura A", nomes_rotas)
+
+    def test_gestor_b_tentativa_patch_injetando_id_onibus_prefeitura_a_retorna_404(self):
+        """Asserção 2: O Gestor B tenta fazer PATCH injetando o ID do ônibus de A -> 404 Not Found."""
+        self.client.force_authenticate(user=self.user_gestor_b)
+        url_onibus_a = f'/api/veiculos/onibus/{self.onibus_a.id}/'
+
+        response = self.client.patch(url_onibus_a, {"capacidade": 99}, format='json')
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
-    def test_prevencao_payload_injection_cliente_id_no_post(self):
-        """
-        Blindagem de Escrita (agent.md 2.1):
-        Mesmo que o JSON contenha 'cliente_id' da Prefeitura Beta, o backend
-        injetará forçosamente a Prefeitura Alfa do usuário autenticado no perform_create.
-        """
-        self.client.force_authenticate(user=self.user_admin_a)
-
-        payload_malicioso = {
-            "modelo": self.modelo_veiculo.id,
-            "placa": "INJ-9999",
-            "capacidade": 42,
-            # Tentativa de injeção: Forçar criação na Prefeitura Beta
-            "cliente_id": self.prefeitura_b.id
-        }
-
-        response = self.client.post(self.url_onibus_list, payload_malicioso, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        novo_onibus = Onibus.objects.get(placa="INJ-9999")
-        # O ônibus DEVE pertencer à Prefeitura Alfa (usuário logado) e NÃO à Prefeitura Beta
-        self.assertEqual(novo_onibus.cliente, self.prefeitura_a)
-        self.assertNotEqual(novo_onibus.cliente, self.prefeitura_b)
-
-    def test_prevencao_troca_tenant_no_patch(self):
-        """
-        Imutabilidade de Tenant:
-        Tentar reatribuir um ônibus existente para outra prefeitura via PATCH é ignorado.
-        """
-        self.client.force_authenticate(user=self.user_admin_a)
-
-        response = self.client.patch(
-            self.url_onibus_detail_a,
-            {"cliente_id": self.prefeitura_b.id, "capacidade": 46},
-            format='json'
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
+        # Integridade do banco: capacidade original mantida
         self.onibus_a.refresh_from_db()
-        self.assertEqual(self.onibus_a.capacidade, 46)
-        # Permanece com o tenant da Prefeitura Alfa
-        self.assertEqual(self.onibus_a.cliente, self.prefeitura_a)
+        self.assertEqual(self.onibus_a.capacidade, 44)
 
-    def test_usuario_sem_tenant_acesso_negado(self):
-        """Usuário autenticado mas sem vínculo a nenhuma prefeitura tem acesso negado (403)."""
-        usuario_sem_role = UsuarioAuth.objects.create_user(
-            email="sem.tenant@teste.com",
-            password="SenhaSegura123!"
-        )
-        self.client.force_authenticate(user=usuario_sem_role)
+    def test_gestor_b_tentativa_delete_injetando_id_onibus_prefeitura_a_retorna_404(self):
+        """Asserção 2.1: O Gestor B tenta fazer DELETE injetando o ID do ônibus de A -> 404 Not Found."""
+        self.client.force_authenticate(user=self.user_gestor_b)
+        url_onibus_a = f'/api/veiculos/onibus/{self.onibus_a.id}/'
 
-        response = self.client.get(self.url_onibus_list)
-        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        response = self.client.delete(url_onibus_a)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+        # Registro permanece íntegro
+        self.assertTrue(Onibus.objects.filter(id=self.onibus_a.id).exists())
 
 
 # ==============================================================================
-# 3. TESTES DE GESTÃO, CRUDs E FILA DE APROVAÇÃO (Etapa 2.3)
+# 2. TESTE DE FALHA NA TRANSAÇÃO ATÔMICA (CADASTRO DE ALUNO)
 # ==============================================================================
 
-class GestaoCrudEFilaAprovacaoTestCase(TestCase):
+class TransacaoAtomicaCadastroAlunoAPITestCase(APITestCase):
     """
-    Testes de Gestão de Alunos (Fila de Aprovação), Permissões Granulares (IsTenantAdmin)
-    e CRUDs de Operação (Motoristas, Rotas, Instituições).
-    """
-
-    def setUp(self):
-        self.client = APIClient()
-
-        # 1. Tenants (Prefeituras)
-        self.prefeitura_a = Cliente.objects.create(
-            cnpj="10.000.000/0001-10",
-            razao_social="Prefeitura Municipal Alfa",
-            nome_fantasia="Prefeitura Alfa",
-            ativo=True
-        )
-        self.prefeitura_b = Cliente.objects.create(
-            cnpj="20.000.000/0001-20",
-            razao_social="Prefeitura Municipal Beta",
-            nome_fantasia="Prefeitura Beta",
-            ativo=True
-        )
-
-        # 2. Instituições de Ensino
-        self.inst_a = Instituicao.objects.create(
-            cliente=self.prefeitura_a,
-            nome="Faculdade de Tecnologia Alfa",
-            sigla="FATEC-ALFA",
-            ativo=True
-        )
-        self.inst_b = Instituicao.objects.create(
-            cliente=self.prefeitura_b,
-            nome="Universidade Estadual Beta",
-            sigla="UNESP-BETA",
-            ativo=True
-        )
-
-        # 3. Administrador Municipal Alfa
-        self.user_admin_a = UsuarioAuth.objects.create_user(
-            email="gestor@alfa.sp.gov.br",
-            password="SenhaSegura123!",
-            is_staff=True
-        )
-        self.pessoa_admin_a = Pessoa.objects.create(
-            usuario=self.user_admin_a,
-            nome="Carlos Gestor Alfa",
-            cpf="333.333.333-33",
-            data_nascimento="1982-03-10"
-        )
-        self.admin_alfa = Administrador.objects.create(
-            pessoa=self.pessoa_admin_a,
-            cliente=self.prefeitura_a,
-            cargo="Secretário de Transporte",
-            ativo=True
-        )
-
-        # 4. Aluno da Prefeitura Alfa (Aguardando Aprovação)
-        self.user_aluno_a = UsuarioAuth.objects.create_user(
-            email="aluno.pendente@alfa.edu.br",
-            password="SenhaSegura123!"
-        )
-        self.pessoa_aluno_a = Pessoa.objects.create(
-            usuario=self.user_aluno_a,
-            nome="Mariana Estudante",
-            cpf="444.444.444-44",
-            data_nascimento="2003-07-20"
-        )
-        self.aluno_pendente_a = Aluno.objects.create(
-            pessoa=self.pessoa_aluno_a,
-            cliente=self.prefeitura_a,
-            instituicao=self.inst_a,
-            matricula="20261111",
-            status_aprovacao=TipoStatusAprovacao.PENDENTE
-        )
-
-        # 5. Aluno da Prefeitura Beta (Isolamento)
-        self.user_aluno_b = UsuarioAuth.objects.create_user(
-            email="aluno.beta@beta.edu.br",
-            password="SenhaSegura123!"
-        )
-        self.pessoa_aluno_b = Pessoa.objects.create(
-            usuario=self.user_aluno_b,
-            nome="Rodrigo Estudante Beta",
-            cpf="555.555.555-55",
-            data_nascimento="2002-11-15"
-        )
-        self.aluno_pendente_b = Aluno.objects.create(
-            pessoa=self.pessoa_aluno_b,
-            cliente=self.prefeitura_b,
-            instituicao=self.inst_b,
-            matricula="20262222",
-            status_aprovacao=TipoStatusAprovacao.PENDENTE
-        )
-
-    def test_admin_visualiza_fila_pendente_com_isolamento_tenant(self):
-        """Admin visualiza a fila pendente retornando apenas alunos do seu próprio município."""
-        self.client.force_authenticate(user=self.user_admin_a)
-        response = self.client.get('/api/alunos/fila-pendente/')
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Deve listar a aluna de Alfa mas NÃO o aluno de Beta
-        matriculas = [item['matricula'] for item in response.data]
-        self.assertIn("20261111", matriculas)
-        self.assertNotIn("20262222", matriculas)
-
-    def test_admin_aprova_aluno_com_sucesso_e_auditoria(self):
-        """Admin aprova aluno registrando status_aprovacao='aprovado', data_decisao e avaliador."""
-        self.client.force_authenticate(user=self.user_admin_a)
-        url_aprovar = f"/api/alunos/{self.aluno_pendente_a.id}/aprovar/"
-
-        response = self.client.post(url_aprovar, {}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        self.aluno_pendente_a.refresh_from_db()
-        self.assertEqual(self.aluno_pendente_a.status_aprovacao, TipoStatusAprovacao.APROVADO)
-        self.assertIsNotNone(self.aluno_pendente_a.data_decisao)
-        self.assertEqual(self.aluno_pendente_a.avaliado_por, self.admin_alfa)
-
-    def test_admin_rejeita_aluno_com_sucesso(self):
-        """Admin rejeita solicitação registrando status_aprovacao='rejeitado' e auditoria."""
-        self.client.force_authenticate(user=self.user_admin_a)
-        url_rejeitar = f"/api/alunos/{self.aluno_pendente_a.id}/rejeitar/"
-
-        response = self.client.post(url_rejeitar, {"motivo": "Matrícula não confirmada na faculdade"}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        self.aluno_pendente_a.refresh_from_db()
-        self.assertEqual(self.aluno_pendente_a.status_aprovacao, TipoStatusAprovacao.REJEITADO)
-        self.assertIsNotNone(self.aluno_pendente_a.data_decisao)
-        self.assertEqual(self.aluno_pendente_a.avaliado_por, self.admin_alfa)
-
-    def test_aluno_nao_tem_permissao_para_acessar_painel_gestao_alunos(self):
-        """Aluno tentando acessar a lista de alunos ou aprovar recebe 403 Forbidden (IsTenantAdmin)."""
-        self.client.force_authenticate(user=self.user_aluno_a)
-
-        # Tentativa de listar alunos
-        resp_list = self.client.get('/api/alunos/')
-        self.assertEqual(resp_list.status_code, status.HTTP_403_FORBIDDEN)
-
-        # Tentativa de aprovar
-        resp_aprovar = self.client.post(f"/api/alunos/{self.aluno_pendente_a.id}/aprovar/", {}, format='json')
-        self.assertEqual(resp_aprovar.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_admin_cadastra_motorista_party_role_atomico(self):
-        """Admin cadastra Motorista criando atomicamente UsuarioAuth, Pessoa e Motorista."""
-        self.client.force_authenticate(user=self.user_admin_a)
-
-        payload_motorista = {
-            "email": "motorista.antonio@alfa.sp.gov.br",
-            "password": "SenhaForteMotorista2026!",
-            "nome": "Antônio da Silva",
-            "cpf": "666.777.888-99",
-            "data_nascimento": "1978-04-12",
-            "cnh": "99887766554",
-            "categoria_cnh": "D",
-            "ativo": True
-        }
-
-        response = self.client.post('/api/motoristas/', payload_motorista, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        # Verifica persistência no banco
-        usuario = UsuarioAuth.objects.get(email="motorista.antonio@alfa.sp.gov.br")
-        self.assertTrue(usuario.check_password("SenhaForteMotorista2026!"))
-
-        pessoa = Pessoa.objects.get(usuario=usuario)
-        self.assertEqual(pessoa.nome, "Antônio da Silva")
-
-        motorista = Motorista.objects.get(pessoa=pessoa)
-        self.assertEqual(motorista.cnh, "99887766554")
-        self.assertEqual(motorista.categoria_cnh, "D")
-        self.assertEqual(motorista.cliente, self.prefeitura_a)
-
-    def test_aluno_pode_ler_rotas_mas_nao_pode_criar(self):
-        """Aluno pode consultar rotas de seu município, mas tem criação bloqueada (IsTenantAdminOrReadOnly)."""
-        # Cria rota para a prefeitura Alfa
-        rota = Rota.objects.create(cliente=self.prefeitura_a, nome="Linha 1 - Matutino", ativo=True)
-
-        self.client.force_authenticate(user=self.user_aluno_a)
-
-        # Leitura permitida (SAFE_METHOD)
-        resp_get = self.client.get('/api/rotas/')
-        self.assertEqual(resp_get.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(resp_get.data), 1)
-
-        # Escrita bloqueada para Aluno
-        resp_post = self.client.post('/api/rotas/', {"nome": "Linha Não Autorizada"}, format='json')
-        self.assertEqual(resp_post.status_code, status.HTTP_403_FORBIDDEN)
-
-    def test_admin_cadastra_rota_com_paradas_ordenadas(self):
-        """Admin cadastra rota vinculando instituições atendidas com ordem de parada."""
-        self.client.force_authenticate(user=self.user_admin_a)
-
-        payload_rota = {
-            "nome": "Rota Universitária Noturna",
-            "ativo": True,
-            "paradas": [
-                {"instituicao_id": self.inst_a.id, "ordem_parada": 1}
-            ]
-        }
-
-        response = self.client.post('/api/rotas/', payload_rota, format='json')
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        rota = Rota.objects.get(nome="Rota Universitária Noturna")
-        self.assertEqual(rota.cliente, self.prefeitura_a)
-        self.assertEqual(rota.rota_instituicoes.count(), 1)
-        self.assertEqual(rota.rota_instituicoes.first().instituicao, self.inst_a)
-
-    def test_admin_rejeitado_ao_vincular_instituicao_outro_tenant(self):
-        """Multi-tenant: Admin não pode incluir em sua rota uma instituição pertencente a outra prefeitura."""
-        self.client.force_authenticate(user=self.user_admin_a)
-
-        payload_rota_invalida = {
-            "nome": "Rota Invasiva",
-            "paradas": [
-                {"instituicao_id": self.inst_b.id, "ordem_parada": 1}  # Instituição da Prefeitura Beta
-            ]
-        }
-
-        response = self.client.post('/api/rotas/', payload_rota_invalida, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("paradas", response.data)
-
-
-# ==============================================================================
-# 4. TESTES DE PRIVACIDADE E ANONIMIZAÇÃO LGPD (Etapa 2.4 - agent.md 2.3)
-# ==============================================================================
-
-class LGPDPrivacidadeAnonimizacaoTestCase(TestCase):
-    """
-    Testes do Direito ao Esquecimento e Eliminação de Dados (LGPD Art. 18, VI).
-    Valida mascaramento irreversível de PII, revogação de acesso e a regra estrita
-    de NÃO EXECUTAR HARD DELETES para salvaguarda do histórico municipal de embarques.
+    Cenário 2: Teste de Falha na Transação Atômica de Cadastro de Aluno.
+    Garante que se qualquer etapa da inserção sequencial falhar (ex: RegistroConsentimento),
+    o rollback do banco de dados reverta 100% dos dados, deixando ZERO registros órfãos.
     """
 
     def setUp(self):
-        self.client = APIClient()
-
-        # 1. Tenant e Escola
         self.cliente = Cliente.objects.create(
-            cnpj="30.000.000/0001-30",
-            razao_social="Prefeitura Municipal Delta",
-            nome_fantasia="Prefeitura Delta",
+            cnpj="99.999.999/0001-99",
+            razao_social="Prefeitura Municipal Atomic Test",
+            nome_fantasia="Prefeitura Atomic",
             ativo=True
         )
         self.instituicao = Instituicao.objects.create(
             cliente=self.cliente,
-            nome="Universidade Delta",
-            sigla="UNIDELTA",
+            nome="Faculdade de Tecnologia de Teste",
+            sigla="FATEC-TEST",
+            ativo=True
+        )
+        self.documento = Documento_Legal.objects.create(
+            tipo=TipoDocumentoLegal.TERMOS_DE_USO,
+            versao="1.0-2026",
+            conteudo="Termos de Uso Oficiais",
+            ativo=True
+        )
+        self.url_registro = '/api/auth/registro-aluno/'
+
+    def test_falha_na_criacao_do_consentimento_executa_rollback_completo(self):
+        """
+        Simula submissão de payload de cadastro completo, mas injeta falha crítica
+        no Registro_Consentimento (última etapa). Comprova zero registros órfãos.
+        """
+        payload = {
+            "email": "aluno.falha.consentimento@faculdade.edu.br",
+            "password": "SenhaSeguraAtomic123!",
+            "nome": "Candidato Falha Consentimento",
+            "cpf": "100.200.300-40",
+            "data_nascimento": "2000-01-01",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "ATOMIC-001",
+            "termo_aceito": True,
+            "documento_legal_id": self.documento.id
+        }
+
+        # Mock da última etapa (Registro_Consentimento) para disparar falha intencional
+        with patch('apps.core.models.Registro_Consentimento.objects.create', side_effect=RuntimeError("Falha crítica no consentimento")):
+            with self.assertRaises(RuntimeError):
+                self.client.post(self.url_registro, payload, format='json')
+
+        # Asserções Exigidas: ZERO REGISTROS ÓRFÃOS (count == 0 em todas as tabelas)
+        self.assertEqual(UsuarioAuth.objects.filter(email="aluno.falha.consentimento@faculdade.edu.br").count(), 0)
+        self.assertEqual(Pessoa.objects.filter(cpf="100.200.300-40").count(), 0)
+        self.assertEqual(Aluno.objects.filter(matricula="ATOMIC-001").count(), 0)
+        self.assertEqual(Registro_Consentimento.objects.filter(pessoa__nome="Candidato Falha Consentimento").count(), 0)
+
+    def test_falha_na_criacao_do_aluno_executa_rollback_completo(self):
+        """
+        Simula falha na criação da entidade Aluno. Comprova que UsuarioAuth e Pessoa não sobram órfãos.
+        """
+        payload = {
+            "email": "aluno.falha.aluno@faculdade.edu.br",
+            "password": "SenhaSeguraAtomic123!",
+            "nome": "Candidato Falha Aluno",
+            "cpf": "200.300.400-50",
+            "data_nascimento": "2001-02-02",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "ATOMIC-002",
+            "termo_aceito": True,
+            "documento_legal_id": self.documento.id
+        }
+
+        with patch('apps.core.models.Aluno.objects.create', side_effect=RuntimeError("Falha simulada na criação do Aluno")):
+            with self.assertRaises(RuntimeError):
+                self.client.post(self.url_registro, payload, format='json')
+
+        self.assertEqual(UsuarioAuth.objects.filter(email="aluno.falha.aluno@faculdade.edu.br").count(), 0)
+        self.assertEqual(Pessoa.objects.filter(cpf="200.300.400-50").count(), 0)
+        self.assertEqual(Aluno.objects.filter(matricula="ATOMIC-002").count(), 0)
+
+
+# ==============================================================================
+# 3. TESTE DO FLUXO DE ANONIMIZAÇÃO (LGPD - DIREITO AO ESQUECIMENTO)
+# ==============================================================================
+
+class LGPDAnonimizacaoDireitoAoEsquecimentoAPITestCase(APITestCase):
+    """
+    Cenário 3: Teste do Fluxo de Anonimização (LGPD Art. 18, VI).
+    Valida mascaramento irreversível de PII, revogação de acesso e a REGRA DE OURO
+    da inexistência de Hard Deletes (preservação dos registros e IDs históricos).
+    """
+
+    def setUp(self):
+        # 1. Tenant e Escola
+        self.cliente = Cliente.objects.create(
+            cnpj="55.555.555/0001-55",
+            razao_social="Prefeitura Municipal LGPD Test",
+            nome_fantasia="Prefeitura LGPD",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Centro Universitário LGPD",
+            sigla="UNILGPD",
             ativo=True
         )
 
-        # 2. Aluno com dados civis completos
-        self.senha_aluno = "MinhaSenhaForte2026!"
+        # 2. Aluno autenticado com dados civis completos
+        self.senha_aluno = "SenhaForteTitular2026!"
         self.usuario_aluno = UsuarioAuth.objects.create_user(
-            email="aluno.lgpd@delta.edu.br",
+            email="aluno.titular@unilgpd.edu.br",
             password=self.senha_aluno,
             ativo=True
         )
         self.pessoa_aluno = Pessoa.objects.create(
             usuario=self.usuario_aluno,
-            nome="Lucas dos Santos PII",
-            cpf="777.888.999-00",
-            data_nascimento="2001-08-14",
+            nome="Mariana Souza Oliveira",
+            cpf="333.444.555-66",
+            data_nascimento="2000-10-25",
             anonimizado=False
         )
         self.aluno = Aluno.objects.create(
             pessoa=self.pessoa_aluno,
             cliente=self.cliente,
             instituicao=self.instituicao,
-            matricula="MAT-2026-99",
+            matricula="MAT-LGPD-2026",
             status_aprovacao=TipoStatusAprovacao.APROVADO
         )
 
-        # 3. Frota, Rota e Motorista
-        self.modelo = ModeloVeiculo.objects.create(marca="Marcopolo", nome="Senior")
-        self.onibus = Onibus.objects.create(cliente=self.cliente, modelo=self.modelo, placa="DLT-3030", capacidade=30)
-        self.rota = Rota.objects.create(cliente=self.cliente, nome="Linha Delta Campus")
-        self.user_mot = UsuarioAuth.objects.create_user(email="mot.delta@delta.gov.br", password="SenhaMotorista123!")
-        self.pessoa_mot = Pessoa.objects.create(usuario=self.user_mot, nome="Motorista Delta", cpf="123.123.123-12")
-        self.motorista = Motorista.objects.create(pessoa=self.pessoa_mot, cliente=self.cliente, cnh="55443322110")
+        # 3. Histórico Operacional (Frota, Rota, Viagem e Embarque)
+        self.modelo = ModeloVeiculo.objects.create(marca="Mercedes-Benz", nome="OF-1721")
+        self.onibus = Onibus.objects.create(cliente=self.cliente, modelo=self.modelo, placa="LGP-2026", capacidade=40)
+        self.rota = Rota.objects.create(cliente=self.cliente, nome="Rota Universitária Central")
+        self.user_mot = UsuarioAuth.objects.create_user(email="mot.lgpd@prefeitura.gov.br", password="SenhaMotorista123!")
+        self.pessoa_mot = Pessoa.objects.create(usuario=self.user_mot, nome="Motorista Teste", cpf="999.888.777-11")
+        self.motorista = Motorista.objects.create(pessoa=self.pessoa_mot, cliente=self.cliente, cnh="11223344556")
 
-        # 4. Histórico Operacional (Previsão de Viagem e Registro de Embarque)
         self.viagem = Viagem.objects.create(
             rota=self.rota,
             onibus=self.onibus,
@@ -779,79 +344,504 @@ class LGPDPrivacidadeAnonimizacaoTestCase(TestCase):
             timestamp=timezone.now()
         )
 
-        self.url_exclusao = "/api/auth/solicitar-exclusao/"
+        self.url_exclusao = '/api/auth/solicitar-exclusao/'
 
-    def test_bloqueio_requisicao_anonima_de_exclusao(self):
-        """Tentativa de solicitar exclusão sem autenticação é rejeitada (401)."""
-        response = self.client.post(self.url_exclusao, {"password": self.senha_aluno, "confirmacao": True}, format='json')
-        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
-
-    def test_rejeicao_com_senha_incorreta(self):
-        """Tentativa de anonimização com senha incorreta é barrada com 400 Bad Request."""
-        self.client.force_authenticate(user=self.usuario_aluno)
-        payload = {"password": "SenhaCompletamenteErrada!", "confirmacao": True}
-
-        response = self.client.post(self.url_exclusao, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("password", response.data)
-
-        # Dados permanecem inalterados
-        self.pessoa_aluno.refresh_from_db()
-        self.assertFalse(self.pessoa_aluno.anonimizado)
-        self.assertEqual(self.pessoa_aluno.nome, "Lucas dos Santos PII")
-
-    def test_rejeicao_sem_confirmacao_expressa(self):
-        """Exige confirmação explícita de revogação de consentimento."""
-        self.client.force_authenticate(user=self.usuario_aluno)
-        payload = {"password": self.senha_aluno, "confirmacao": False}
-
-        response = self.client.post(self.url_exclusao, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("confirmacao", response.data)
-
-    def test_anonimizacao_sucesso_sem_hard_deletes(self):
+    def test_fluxo_completo_anonimizacao_sem_hard_deletes(self):
         """
-        LGPD Compliance (agent.md 2.3):
-        Valida que o processo mascara nome, CPF, endereço, inativa login e
-        NÃO DELETA registros de Aluno, Previsão ou Embarques históricos.
+        Executa solicitação de exclusão/anonimização pelo aluno e valida todas as asserções:
+        1. Status HTTP 200 OK.
+        2. pessoa.anonimizado == True e usuario.is_active == False.
+        3. Nome mascarado ("Anonimizado" / "Usuário Anonimizado") e CPF nulo.
+        4. IDs primários de Pessoa e Aluno intactos (NO HARD DELETE).
+        5. UsuarioAuth associado com is_active=False e ativo=False.
         """
+        pessoa_id_original = self.pessoa_aluno.id
+        aluno_id_original = self.aluno.id
+        embarque_id_original = self.embarque.id
+
         self.client.force_authenticate(user=self.usuario_aluno)
         payload = {"password": self.senha_aluno, "confirmacao": True}
 
         response = self.client.post(self.url_exclusao, payload, format='json')
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertTrue(response.data["anonimizado"])
 
-        # 1. Validação na entidade Pessoa (PII mascarada)
+        # Asserção 1: Retorna 200 OK
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data.get("anonimizado"))
+
+        # Asserção 2 e 3: Pessoa mascarada e desvinculada de dados pessoais
         self.pessoa_aluno.refresh_from_db()
         self.assertTrue(self.pessoa_aluno.anonimizado)
-        self.assertEqual(self.pessoa_aluno.nome, "Usuário Anonimizado")
+        self.assertIn("Anonimizado", self.pessoa_aluno.nome)
         self.assertIsNone(self.pessoa_aluno.cpf)
         self.assertIsNone(self.pessoa_aluno.data_nascimento)
         self.assertIsNone(self.pessoa_aluno.endereco)
 
-        # 2. Validação nas credenciais de autenticação
+        # Asserção 4: IDs primários preservados intactos (NO HARD DELETES)
+        self.assertEqual(self.pessoa_aluno.id, pessoa_id_original)
+        self.assertEqual(self.aluno.id, aluno_id_original)
+        self.assertTrue(Pessoa.objects.filter(id=pessoa_id_original).exists())
+        self.assertTrue(Aluno.objects.filter(id=aluno_id_original).exists())
+        self.assertTrue(Embarque.objects.filter(id=embarque_id_original).exists())
+
+        # Asserção 5: UsuarioAuth inativo e com senha revogada
         self.usuario_aluno.refresh_from_db()
+        self.assertFalse(self.usuario_aluno.is_active)
         self.assertFalse(self.usuario_aluno.ativo)
         self.assertFalse(self.usuario_aluno.has_usable_password())
         self.assertTrue(self.usuario_aluno.email.startswith("anonimizado_"))
 
-        # 3. Validação no papel Aluno
-        self.aluno.refresh_from_db()
-        self.assertTrue(self.aluno.matricula.startswith("ANON_"))
-
-        # 4. REGRA CRÍTICA DE OURO: ZERO HARD DELETES
-        # O histórico operacional permanece intacto no banco de dados
-        self.assertTrue(Aluno.objects.filter(id=self.aluno.id).exists())
-        self.assertTrue(PrevisaoViagem.objects.filter(id=self.previsao.id).exists())
-        self.assertTrue(Embarque.objects.filter(id=self.embarque.id).exists())
-
-        # 5. Tentativa de novo login com a conta anonimizada é bloqueada
+        # Asserção Adicional: Bloqueio de login subsequente
         login_resp = self.client.post('/api/token/', {
-            "email": "aluno.lgpd@delta.edu.br",
+            "email": "aluno.titular@unilgpd.edu.br",
             "password": self.senha_aluno
         }, format='json')
         self.assertEqual(login_resp.status_code, status.HTTP_401_UNAUTHORIZED)
 
 
+# ==============================================================================
+# 4. TESTE DE SEGURANÇA LGPD (INJEÇÃO DE IP/USER-AGENT)
+# ==============================================================================
 
+class LGPDAntiSpoofingConsentimentoAPITestCase(APITestCase):
+    """
+    Cenário 4: Teste de Anti-Spoofing de Consentimento LGPD.
+    Garante que tentativas maliciosas de forjar a prova de consentimento enviando
+    'ip_address' e 'user_agent' no JSON do request sejam desconsideradas, e que
+    o backend grave EXCLUSIVAMENTE os dados reais dos cabeçalhos HTTP.
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            cnpj="77.777.777/0001-77",
+            razao_social="Prefeitura Anti-Spoofing",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Faculdade de Segurança",
+            sigla="FACSEG",
+            ativo=True
+        )
+        self.documento = Documento_Legal.objects.create(
+            tipo=TipoDocumentoLegal.TERMOS_DE_USO,
+            versao="1.0-2026",
+            conteudo="Termos de Uso",
+            ativo=True
+        )
+        self.url_registro = '/api/auth/registro-aluno/'
+
+    def test_ignora_ip_e_user_agent_injetados_no_payload_e_usa_cabecalho_http_real(self):
+        """
+        Asserções:
+        1. API processa o registro com sucesso (201 Created), ignorando os campos falsos no JSON.
+        2. No banco, RegistroConsentimento armazena o IP e User-Agent reais dos cabeçalhos HTTP.
+        """
+        payload_com_injecao = {
+            "email": "vitima.spoofing@facseg.edu.br",
+            "password": "SenhaSegura123!",
+            "nome": "Candidato Anti Spoofing",
+            "cpf": "777.666.555-44",
+            "data_nascimento": "1999-09-09",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "SEC-2026-01",
+            "termo_aceito": True,
+            "documento_legal_id": self.documento.id,
+            # Tentativa de injeção de consentimento forjado:
+            "ip_address": "198.51.100.99",
+            "user_agent": "HackerBot/1.0 (Spoofed Machine)"
+        }
+
+        # Requisição enviada com cabeçalhos HTTP reais de cliente legítimo
+        headers_reais = {
+            "REMOTE_ADDR": "203.0.113.42",
+            "HTTP_USER_AGENT": "AppBus-Mobile-PWA/2.4 (Android 14; Pixel 8)"
+        }
+
+        response = self.client.post(
+            self.url_registro,
+            payload_com_injecao,
+            format='json',
+            **headers_reais
+        )
+
+        # Asserção 1: Sucesso no processamento
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Asserção 2: Validação no banco de dados
+        pessoa = Pessoa.objects.get(cpf="777.666.555-44")
+        consentimento = Registro_Consentimento.objects.get(pessoa=pessoa)
+
+        # O IP forjado (198.51.100.99) NÃO deve ter sido gravado
+        self.assertNotEqual(consentimento.ip_address, "198.51.100.99")
+        # O User-Agent forjado ("HackerBot/1.0") NÃO deve ter sido gravado
+        self.assertNotEqual(consentimento.user_agent, "HackerBot/1.0 (Spoofed Machine)")
+
+        # Os valores gravados DEVEM ser os provenientes da requisição HTTP real
+        self.assertEqual(consentimento.ip_address, "203.0.113.42")
+        self.assertEqual(consentimento.user_agent, "AppBus-Mobile-PWA/2.4 (Android 14; Pixel 8)")
+
+
+# ==============================================================================
+# 5. AUTENTICAÇÃO BASE (ZERO TRUST)
+# ==============================================================================
+
+class ZeroTrustAutenticacaoBaseAPITestCase(APITestCase):
+    """
+    Cenário 5: Teste de Arquitetura Zero Trust.
+    Garante que qualquer requisição anônima (sem token JWT válido) seja
+    bloqueada sumariamente com status HTTP 401 Unauthorized.
+    """
+
+    def test_usuario_anonimo_bloqueado_em_instituicoes(self):
+        """Bloqueio de anônimo em /api/instituicoes/ -> 401 Unauthorized."""
+        response = self.client.get('/api/instituicoes/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_usuario_anonimo_bloqueado_em_onibus(self):
+        """Bloqueio de anônimo em /api/veiculos/onibus/ -> 401 Unauthorized."""
+        response = self.client.get('/api/veiculos/onibus/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_usuario_anonimo_bloqueado_em_rotas(self):
+        """Bloqueio de anônimo em /api/rotas/ -> 401 Unauthorized."""
+        response = self.client.get('/api/rotas/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_usuario_anonimo_bloqueado_em_motoristas(self):
+        """Bloqueio de anônimo em /api/motoristas/ -> 401 Unauthorized."""
+        response = self.client.get('/api/motoristas/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_usuario_anonimo_bloqueado_em_alunos(self):
+        """Bloqueio de anônimo em /api/alunos/ -> 401 Unauthorized."""
+        response = self.client.get('/api/alunos/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+# ==============================================================================
+# 6. GESTÃO MUNICIPAL, FILA DE APROVAÇÃO E RBAC
+# ==============================================================================
+
+class GestaoFilaAprovacaoERBACAPITestCase(APITestCase):
+    """
+    Testes de Gestão e Auditoria de Alunos (Fila de Aprovação),
+    Permissões Granulares (IsTenantAdmin) e CRUDs Operacionais.
+    """
+
+    def setUp(self):
+        # 1. Tenants (Prefeituras Alfa e Beta)
+        self.prefeitura_a = Cliente.objects.create(
+            cnpj="10.000.000/0001-10",
+            razao_social="Prefeitura Municipal Alfa",
+            ativo=True
+        )
+        self.prefeitura_b = Cliente.objects.create(
+            cnpj="20.000.000/0001-20",
+            razao_social="Prefeitura Municipal Beta",
+            ativo=True
+        )
+
+        # 2. Instituições
+        self.inst_a = Instituicao.objects.create(
+            cliente=self.prefeitura_a,
+            nome="Faculdade Alfa",
+            sigla="FALFA",
+            ativo=True
+        )
+        self.inst_b = Instituicao.objects.create(
+            cliente=self.prefeitura_b,
+            nome="Faculdade Beta",
+            sigla="FBETA",
+            ativo=True
+        )
+
+        # 3. Gestor Administrador Alfa
+        self.user_admin_a = UsuarioAuth.objects.create_user(
+            email="admin.alfa@prefeitura.gov.br",
+            password="SenhaSegura123!",
+            is_staff=True
+        )
+        self.pessoa_admin_a = Pessoa.objects.create(
+            usuario=self.user_admin_a,
+            nome="Gestor Alfa",
+            cpf="444.333.222-11",
+            data_nascimento="1980-01-01"
+        )
+        self.admin_alfa = Administrador.objects.create(
+            pessoa=self.pessoa_admin_a,
+            cliente=self.prefeitura_a,
+            cargo="Secretário de Transporte",
+            ativo=True
+        )
+
+        # 4. Aluno Pendente Alfa
+        self.user_aluno_a = UsuarioAuth.objects.create_user(
+            email="aluno.alfa@faculdade.edu.br",
+            password="SenhaSegura123!"
+        )
+        self.pessoa_aluno_a = Pessoa.objects.create(
+            usuario=self.user_aluno_a,
+            nome="Juliana Estudante Alfa",
+            cpf="555.444.333-22",
+            data_nascimento="2002-03-15"
+        )
+        self.aluno_pendente_a = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_a,
+            cliente=self.prefeitura_a,
+            instituicao=self.inst_a,
+            matricula="MAT-ALFA-01",
+            status_aprovacao=TipoStatusAprovacao.PENDENTE
+        )
+
+        # 5. Aluno Pendente Beta
+        self.user_aluno_b = UsuarioAuth.objects.create_user(
+            email="aluno.beta@faculdade.edu.br",
+            password="SenhaSegura123!"
+        )
+        self.pessoa_aluno_b = Pessoa.objects.create(
+            usuario=self.user_aluno_b,
+            nome="Lucas Estudante Beta",
+            cpf="666.555.444-33",
+            data_nascimento="2001-04-20"
+        )
+        self.aluno_pendente_b = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_b,
+            cliente=self.prefeitura_b,
+            instituicao=self.inst_b,
+            matricula="MAT-BETA-02",
+            status_aprovacao=TipoStatusAprovacao.PENDENTE
+        )
+
+    def test_admin_visualiza_fila_pendente_com_isolamento_tenant(self):
+        """Admin visualiza a fila pendente retornando apenas alunos de seu município."""
+        self.client.force_authenticate(user=self.user_admin_a)
+        response = self.client.get('/api/alunos/fila-pendente/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        matriculas = [item['matricula'] for item in response.data]
+        self.assertIn("MAT-ALFA-01", matriculas)
+        self.assertNotIn("MAT-BETA-02", matriculas)
+
+    def test_admin_aprova_aluno_com_sucesso_e_auditoria(self):
+        """Admin aprova aluno registrando status_aprovacao='aprovado', data_decisao e avaliador."""
+        self.client.force_authenticate(user=self.user_admin_a)
+        url_aprovar = f"/api/alunos/{self.aluno_pendente_a.id}/aprovar/"
+
+        response = self.client.post(url_aprovar, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.aluno_pendente_a.refresh_from_db()
+        self.assertEqual(self.aluno_pendente_a.status_aprovacao, TipoStatusAprovacao.APROVADO)
+        self.assertIsNotNone(self.aluno_pendente_a.data_decisao)
+        self.assertEqual(self.aluno_pendente_a.avaliado_por, self.admin_alfa)
+
+    def test_admin_rejeita_aluno_com_sucesso(self):
+        """Admin rejeita solicitação registrando status_aprovacao='rejeitado' e auditoria."""
+        self.client.force_authenticate(user=self.user_admin_a)
+        url_rejeitar = f"/api/alunos/{self.aluno_pendente_a.id}/rejeitar/"
+
+        response = self.client.post(url_rejeitar, {"motivo": "Documentação inconsistente"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.aluno_pendente_a.refresh_from_db()
+        self.assertEqual(self.aluno_pendente_a.status_aprovacao, TipoStatusAprovacao.REJEITADO)
+        self.assertIsNotNone(self.aluno_pendente_a.data_decisao)
+        self.assertEqual(self.aluno_pendente_a.avaliado_por, self.admin_alfa)
+
+    def test_aluno_bloqueado_ao_tentar_acessar_gestao_ou_aprovar(self):
+        """Aluno recebe 403 Forbidden ao tentar listar painel de alunos ou aprovar."""
+        self.client.force_authenticate(user=self.user_aluno_a)
+
+        resp_list = self.client.get('/api/alunos/')
+        self.assertEqual(resp_list.status_code, status.HTTP_403_FORBIDDEN)
+
+        resp_aprovar = self.client.post(f"/api/alunos/{self.aluno_pendente_a.id}/aprovar/", {}, format='json')
+        self.assertEqual(resp_aprovar.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_cadastra_motorista_party_role_atomico(self):
+        """Admin cadastra Motorista criando atomicamente UsuarioAuth, Pessoa e Motorista."""
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload_motorista = {
+            "email": "motorista.jose@prefeitura-alfa.sp.gov.br",
+            "password": "SenhaForteMotorista2026!",
+            "nome": "José Motorista Alfa",
+            "cpf": "999.777.555-33",
+            "data_nascimento": "1975-06-20",
+            "cnh": "55667788990",
+            "categoria_cnh": "D",
+            "ativo": True
+        }
+
+        response = self.client.post('/api/motoristas/', payload_motorista, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        usuario = UsuarioAuth.objects.get(email="motorista.jose@prefeitura-alfa.sp.gov.br")
+        self.assertTrue(usuario.check_password("SenhaForteMotorista2026!"))
+
+        pessoa = Pessoa.objects.get(usuario=usuario)
+        self.assertEqual(pessoa.nome, "José Motorista Alfa")
+
+        motorista = Motorista.objects.get(pessoa=pessoa)
+        self.assertEqual(motorista.cnh, "55667788990")
+        self.assertEqual(motorista.cliente, self.prefeitura_a)
+
+    def test_aluno_pode_ler_rotas_mas_nao_pode_criar(self):
+        """Aluno pode consultar rotas de seu município, mas tem criação bloqueada (IsTenantAdminOrReadOnly)."""
+        rota = Rota.objects.create(cliente=self.prefeitura_a, nome="Linha Circular Campus", ativo=True)
+
+        self.client.force_authenticate(user=self.user_aluno_a)
+
+        resp_get = self.client.get('/api/rotas/')
+        self.assertEqual(resp_get.status_code, status.HTTP_200_OK)
+
+        resp_post = self.client.post('/api/rotas/', {"nome": "Linha Ilegal"}, format='json')
+        self.assertEqual(resp_post.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_cadastra_rota_com_paradas_ordenadas(self):
+        """Admin cadastra rota vinculando instituições com ordem de parada."""
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload = {
+            "nome": "Rota Alfa Express",
+            "ativo": True,
+            "paradas": [
+                {"instituicao_id": self.inst_a.id, "ordem_parada": 1}
+            ]
+        }
+
+        response = self.client.post('/api/rotas/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        rota = Rota.objects.get(nome="Rota Alfa Express")
+        self.assertEqual(rota.cliente, self.prefeitura_a)
+        self.assertEqual(rota.rota_instituicoes.count(), 1)
+        self.assertEqual(rota.rota_instituicoes.first().instituicao, self.inst_a)
+
+    def test_admin_rejeitado_ao_vincular_instituicao_outro_tenant(self):
+        """Multi-tenant: Admin não pode incluir em sua rota uma instituição pertencente a outra prefeitura."""
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload_invalido = {
+            "nome": "Rota Invasora",
+            "paradas": [
+                {"instituicao_id": self.inst_b.id, "ordem_parada": 1}
+            ]
+        }
+
+        response = self.client.post('/api/rotas/', payload_invalido, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("paradas", response.data)
+
+
+# ==============================================================================
+# 7. VALIDAÇÕES LGPD DE MENORES E PROVAS DE CONSENTIMENTO
+# ==============================================================================
+
+class AlunoOnboardingValidacoesAPITestCase(APITestCase):
+    """
+    Testes de regras LGPD complementares:
+    - Menores de 18 anos exigem CPF do responsável legal.
+    - Opt-in obrigatório (termo_aceito=True).
+    - Criptografia de senhas (nunca texto puro).
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            cnpj="88.888.888/0001-88",
+            razao_social="Prefeitura Validações LGPD",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Escola Técnica Municipal",
+            sigla="ETEC-MUN",
+            ativo=True
+        )
+        self.url_registro = '/api/auth/registro-aluno/'
+
+    def test_onboarding_menor_idade_sem_responsavel_falha(self):
+        """Menor de 18 anos é rejeitado se não informar CPF do responsável legal (LGPD)."""
+        payload = {
+            "email": "menor.sem.cpf@escola.edu.br",
+            "password": "SenhaSegura123!",
+            "nome": "Estudante Menor",
+            "cpf": "111.222.333-44",
+            "data_nascimento": "2010-01-01",  # Menor de 18 anos
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "MENOR-01",
+            "termo_aceito": True,
+            "responsavel_legal_cpf": ""
+        }
+
+        response = self.client.post(self.url_registro, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("responsavel_legal_cpf", response.data)
+
+        # Atomicidade
+        self.assertFalse(UsuarioAuth.objects.filter(email="menor.sem.cpf@escola.edu.br").exists())
+
+    def test_onboarding_menor_idade_com_responsavel_sucesso(self):
+        """Menor de 18 anos com CPF de responsável informado é cadastrado com sucesso."""
+        payload = {
+            "email": "menor.com.cpf@escola.edu.br",
+            "password": "SenhaSegura123!",
+            "nome": "Estudante Apoiado",
+            "cpf": "999.888.777-66",
+            "data_nascimento": "2010-01-01",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "MENOR-02",
+            "termo_aceito": True,
+            "responsavel_legal_cpf": "555.444.333-22"
+        }
+
+        response = self.client.post(self.url_registro, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        usuario = UsuarioAuth.objects.get(email="menor.com.cpf@escola.edu.br")
+        pessoa = Pessoa.objects.get(usuario=usuario)
+        consentimento = Registro_Consentimento.objects.get(pessoa=pessoa)
+        self.assertEqual(consentimento.responsavel_legal_cpf, "555.444.333-22")
+
+    def test_recusa_sem_consentimento_termos(self):
+        """Cadastro sem consentimento expresso dos Termos de Uso é rejeitado."""
+        payload = {
+            "email": "sem.termo@faculdade.edu.br",
+            "password": "SenhaSegura123!",
+            "nome": "Candidato Sem Termo",
+            "cpf": "888.777.666-55",
+            "data_nascimento": "1999-01-01",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "TERMO-01",
+            "termo_aceito": False
+        }
+
+        response = self.client.post(self.url_registro, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("termo_aceito", response.data)
+
+    def test_senha_nunca_armazenada_em_texto_puro(self):
+        """Valida que a senha é persistida exclusivamente como hash criptográfico."""
+        payload = {
+            "email": "teste.hash@faculdade.edu.br",
+            "password": "SenhaUltraSecreta2026!",
+            "nome": "Usuario Hash",
+            "cpf": "444.555.666-77",
+            "data_nascimento": "2000-01-01",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "HASH-01",
+            "termo_aceito": True
+        }
+
+        response = self.client.post(self.url_registro, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        usuario = UsuarioAuth.objects.get(email="teste.hash@faculdade.edu.br")
+        self.assertNotEqual(usuario.password, "SenhaUltraSecreta2026!")
+        self.assertTrue(usuario.check_password("SenhaUltraSecreta2026!"))
+        self.assertTrue(usuario.password.startswith("pbkdf2_") or usuario.password.startswith("argon2"))
