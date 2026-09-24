@@ -591,3 +591,226 @@ class RotaSerializer(serializers.ModelSerializer):
             'updated_at'
         ]
 
+
+# ==============================================================================
+# 5. SERIALIZERS DE GESTÃO ADMINISTRATIVA (Etapa 2.3 - Painel da Prefeitura)
+# ==============================================================================
+
+class AlunoGestaoListSerializer(serializers.ModelSerializer):
+    """
+    Serializer otimizado para o Painel da Prefeitura (listagem da fila de aprovação e gestão de alunos).
+    """
+    nome = serializers.CharField(source='pessoa.nome', read_only=True)
+    cpf = serializers.CharField(source='pessoa.cpf', read_only=True)
+    email = serializers.CharField(source='pessoa.usuario.email', read_only=True)
+    instituicao_nome = serializers.CharField(source='instituicao.nome', read_only=True)
+    instituicao_sigla = serializers.CharField(source='instituicao.sigla', read_only=True)
+    status_aprovacao_display = serializers.CharField(source='get_status_aprovacao_display', read_only=True)
+    avaliado_por_nome = serializers.CharField(source='avaliado_por.pessoa.nome', read_only=True, default=None)
+
+    class Meta:
+        model = Aluno
+        fields = [
+            'id',
+            'nome',
+            'email',
+            'cpf',
+            'matricula',
+            'instituicao_id',
+            'instituicao_nome',
+            'instituicao_sigla',
+            'status_aprovacao',
+            'status_aprovacao_display',
+            'data_solicitacao',
+            'data_decisao',
+            'avaliado_por_id',
+            'avaliado_por_nome',
+        ]
+
+
+class AlunoGestaoDetailSerializer(AlunoGestaoListSerializer):
+    """
+    Serializer detalhado com dados civis completos para análise de conformidade pelo gestor municipal.
+    """
+    data_nascimento = serializers.DateField(source='pessoa.data_nascimento', read_only=True)
+    is_menor_idade = serializers.BooleanField(source='pessoa.is_menor_idade', read_only=True)
+    responsavel_legal_cpf = serializers.SerializerMethodField()
+
+    class Meta(AlunoGestaoListSerializer.Meta):
+        fields = AlunoGestaoListSerializer.Meta.fields + [
+            'data_nascimento',
+            'is_menor_idade',
+            'responsavel_legal_cpf',
+        ]
+
+    def get_responsavel_legal_cpf(self, obj):
+        consentimento = obj.pessoa.consentimentos.order_by('-data_consentimento').first()
+        return consentimento.responsavel_legal_cpf if consentimento else None
+
+
+class AlunoDecisaoSerializer(serializers.Serializer):
+    """Serializer para validação de payload em ações de aprovação e rejeição de alunos."""
+    motivo = serializers.CharField(required=False, allow_blank=True, default='')
+
+
+class MotoristaCreateSerializer(serializers.ModelSerializer):
+    """
+    Criação de Motorista pelo Administrador Municipal.
+    Padrão Party/Role (agent.md 2.2):
+    Criação atômica de UsuarioAuth -> Pessoa -> Motorista.
+    """
+    email = serializers.EmailField(write_only=True)
+    password = serializers.CharField(write_only=True, min_length=8)
+    nome = serializers.CharField(write_only=True, max_length=255)
+    cpf = serializers.CharField(write_only=True, max_length=14)
+    data_nascimento = serializers.DateField(write_only=True)
+
+    nome_completo = serializers.CharField(source='pessoa.nome', read_only=True)
+    cpf_formatado = serializers.CharField(source='pessoa.cpf', read_only=True)
+    email_login = serializers.CharField(source='pessoa.usuario.email', read_only=True)
+
+    class Meta:
+        model = Motorista
+        fields = [
+            'id',
+            'email',
+            'password',
+            'nome',
+            'cpf',
+            'data_nascimento',
+            'cnh',
+            'categoria_cnh',
+            'ativo',
+            'nome_completo',
+            'cpf_formatado',
+            'email_login',
+        ]
+
+    def validate_email(self, value):
+        email_clean = value.lower().strip()
+        if UsuarioAuth.objects.filter(email=email_clean).exists():
+            raise serializers.ValidationError("Este e-mail já está cadastrado no sistema.")
+        return email_clean
+
+    def validate_cpf(self, value):
+        cpf_clean = ''.join(filter(str.isdigit, value))
+        if len(cpf_clean) != 11:
+            raise serializers.ValidationError("CPF inválido. Deve conter exatamente 11 dígitos numéricos.")
+        cpf_formatado = f"{cpf_clean[:3]}.{cpf_clean[3:6]}.{cpf_clean[6:9]}-{cpf_clean[9:]}"
+        if Pessoa.objects.filter(cpf=cpf_formatado).exists():
+            raise serializers.ValidationError("Já existe uma pessoa cadastrada com este CPF.")
+        return cpf_formatado
+
+    def validate_cnh(self, value):
+        cnh_clean = str(value).strip()
+        if Motorista.objects.filter(cnh=cnh_clean).exists():
+            raise serializers.ValidationError("Já existe um motorista cadastrado com esta CNH.")
+        return cnh_clean
+
+    def validate_password(self, value):
+        try:
+            validate_password(value)
+        except DjangoValidationError as err:
+            raise serializers.ValidationError(list(err.messages))
+        return value
+
+    def create(self, validated_data):
+        email = validated_data.pop('email')
+        password = validated_data.pop('password')
+        nome = validated_data.pop('nome')
+        cpf = validated_data.pop('cpf')
+        data_nascimento = validated_data.pop('data_nascimento')
+        cliente = validated_data.pop('cliente')  # Injetado pelo perform_create do TenantBaseViewSet
+
+        with transaction.atomic():
+            usuario = UsuarioAuth.objects.create_user(
+                email=email,
+                password=password,
+                is_staff=False,
+                is_superuser=False
+            )
+            pessoa = Pessoa.objects.create(
+                usuario=usuario,
+                nome=nome,
+                cpf=cpf,
+                data_nascimento=data_nascimento
+            )
+            motorista = Motorista.objects.create(
+                pessoa=pessoa,
+                cliente=cliente,
+                cnh=validated_data.get('cnh'),
+                categoria_cnh=validated_data.get('categoria_cnh', 'D'),
+                ativo=validated_data.get('ativo', True)
+            )
+            logger.info(f"[Party/Role] Motorista ID={motorista.id} criado com sucesso para Tenant={cliente.id}")
+            return motorista
+
+
+class ParadaInputSerializer(serializers.Serializer):
+    """Representação de uma parada em uma rota para entrada via API."""
+    instituicao_id = serializers.IntegerField()
+    ordem_parada = serializers.IntegerField(default=1)
+
+
+class RotaCreateUpdateSerializer(serializers.ModelSerializer):
+    """
+    Serializer para criação e atualização de Rotas municipais com gerenciamento
+    transacional de suas paradas de instituições (RotaInstituicao).
+    """
+    cliente_id = serializers.IntegerField(read_only=True)
+    paradas = ParadaInputSerializer(many=True, required=False, write_only=True)
+    paradas_detalhe = RotaInstituicaoSerializer(source='rota_instituicoes', many=True, read_only=True)
+
+    class Meta:
+        model = Rota
+        fields = [
+            'id',
+            'cliente_id',
+            'nome',
+            'ativo',
+            'paradas',
+            'paradas_detalhe',
+            'created_at',
+            'updated_at'
+        ]
+
+    def create(self, validated_data):
+        paradas_data = validated_data.pop('paradas', [])
+        cliente = validated_data.pop('cliente')
+
+        with transaction.atomic():
+            rota = Rota.objects.create(cliente=cliente, **validated_data)
+            self._salvar_paradas(rota, cliente, paradas_data)
+            return rota
+
+    def update(self, instance, validated_data):
+        paradas_data = validated_data.pop('paradas', None)
+        validated_data.pop('cliente', None)
+
+        with transaction.atomic():
+            for attr, val in validated_data.items():
+                setattr(instance, attr, val)
+            instance.save()
+
+            if paradas_data is not None:
+                instance.rota_instituicoes.all().delete()
+                self._salvar_paradas(instance, instance.cliente, paradas_data)
+
+            return instance
+
+    def _salvar_paradas(self, rota, cliente, paradas_data):
+        for item in paradas_data:
+            inst_id = item['instituicao_id']
+            ordem = item.get('ordem_parada', 1)
+            instituicao = Instituicao.objects.filter(id=inst_id, cliente=cliente).first()
+            if not instituicao:
+                raise serializers.ValidationError(
+                    {"paradas": f"Instituição ID={inst_id} não pertence à sua prefeitura ou não existe."}
+                )
+            RotaInstituicao.objects.create(
+                rota=rota,
+                instituicao=instituicao,
+                ordem_parada=ordem
+            )
+
+

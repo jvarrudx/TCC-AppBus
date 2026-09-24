@@ -25,6 +25,7 @@ from apps.core.models import (
     TipoDocumentoLegal,
     ModeloVeiculo,
     Onibus,
+    Motorista,
     Rota,
 )
 
@@ -458,4 +459,234 @@ class MultiTenantIsolationTestCase(TestCase):
 
         response = self.client.get(self.url_onibus_list)
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+# ==============================================================================
+# 3. TESTES DE GESTÃO, CRUDs E FILA DE APROVAÇÃO (Etapa 2.3)
+# ==============================================================================
+
+class GestaoCrudEFilaAprovacaoTestCase(TestCase):
+    """
+    Testes de Gestão de Alunos (Fila de Aprovação), Permissões Granulares (IsTenantAdmin)
+    e CRUDs de Operação (Motoristas, Rotas, Instituições).
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+
+        # 1. Tenants (Prefeituras)
+        self.prefeitura_a = Cliente.objects.create(
+            cnpj="10.000.000/0001-10",
+            razao_social="Prefeitura Municipal Alfa",
+            nome_fantasia="Prefeitura Alfa",
+            ativo=True
+        )
+        self.prefeitura_b = Cliente.objects.create(
+            cnpj="20.000.000/0001-20",
+            razao_social="Prefeitura Municipal Beta",
+            nome_fantasia="Prefeitura Beta",
+            ativo=True
+        )
+
+        # 2. Instituições de Ensino
+        self.inst_a = Instituicao.objects.create(
+            cliente=self.prefeitura_a,
+            nome="Faculdade de Tecnologia Alfa",
+            sigla="FATEC-ALFA",
+            ativo=True
+        )
+        self.inst_b = Instituicao.objects.create(
+            cliente=self.prefeitura_b,
+            nome="Universidade Estadual Beta",
+            sigla="UNESP-BETA",
+            ativo=True
+        )
+
+        # 3. Administrador Municipal Alfa
+        self.user_admin_a = UsuarioAuth.objects.create_user(
+            email="gestor@alfa.sp.gov.br",
+            password="SenhaSegura123!",
+            is_staff=True
+        )
+        self.pessoa_admin_a = Pessoa.objects.create(
+            usuario=self.user_admin_a,
+            nome="Carlos Gestor Alfa",
+            cpf="333.333.333-33",
+            data_nascimento="1982-03-10"
+        )
+        self.admin_alfa = Administrador.objects.create(
+            pessoa=self.pessoa_admin_a,
+            cliente=self.prefeitura_a,
+            cargo="Secretário de Transporte",
+            ativo=True
+        )
+
+        # 4. Aluno da Prefeitura Alfa (Aguardando Aprovação)
+        self.user_aluno_a = UsuarioAuth.objects.create_user(
+            email="aluno.pendente@alfa.edu.br",
+            password="SenhaSegura123!"
+        )
+        self.pessoa_aluno_a = Pessoa.objects.create(
+            usuario=self.user_aluno_a,
+            nome="Mariana Estudante",
+            cpf="444.444.444-44",
+            data_nascimento="2003-07-20"
+        )
+        self.aluno_pendente_a = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_a,
+            cliente=self.prefeitura_a,
+            instituicao=self.inst_a,
+            matricula="20261111",
+            status_aprovacao=TipoStatusAprovacao.PENDENTE
+        )
+
+        # 5. Aluno da Prefeitura Beta (Isolamento)
+        self.user_aluno_b = UsuarioAuth.objects.create_user(
+            email="aluno.beta@beta.edu.br",
+            password="SenhaSegura123!"
+        )
+        self.pessoa_aluno_b = Pessoa.objects.create(
+            usuario=self.user_aluno_b,
+            nome="Rodrigo Estudante Beta",
+            cpf="555.555.555-55",
+            data_nascimento="2002-11-15"
+        )
+        self.aluno_pendente_b = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_b,
+            cliente=self.prefeitura_b,
+            instituicao=self.inst_b,
+            matricula="20262222",
+            status_aprovacao=TipoStatusAprovacao.PENDENTE
+        )
+
+    def test_admin_visualiza_fila_pendente_com_isolamento_tenant(self):
+        """Admin visualiza a fila pendente retornando apenas alunos do seu próprio município."""
+        self.client.force_authenticate(user=self.user_admin_a)
+        response = self.client.get('/api/alunos/fila-pendente/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Deve listar a aluna de Alfa mas NÃO o aluno de Beta
+        matriculas = [item['matricula'] for item in response.data]
+        self.assertIn("20261111", matriculas)
+        self.assertNotIn("20262222", matriculas)
+
+    def test_admin_aprova_aluno_com_sucesso_e_auditoria(self):
+        """Admin aprova aluno registrando status_aprovacao='aprovado', data_decisao e avaliador."""
+        self.client.force_authenticate(user=self.user_admin_a)
+        url_aprovar = f"/api/alunos/{self.aluno_pendente_a.id}/aprovar/"
+
+        response = self.client.post(url_aprovar, {}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.aluno_pendente_a.refresh_from_db()
+        self.assertEqual(self.aluno_pendente_a.status_aprovacao, TipoStatusAprovacao.APROVADO)
+        self.assertIsNotNone(self.aluno_pendente_a.data_decisao)
+        self.assertEqual(self.aluno_pendente_a.avaliado_por, self.admin_alfa)
+
+    def test_admin_rejeita_aluno_com_sucesso(self):
+        """Admin rejeita solicitação registrando status_aprovacao='rejeitado' e auditoria."""
+        self.client.force_authenticate(user=self.user_admin_a)
+        url_rejeitar = f"/api/alunos/{self.aluno_pendente_a.id}/rejeitar/"
+
+        response = self.client.post(url_rejeitar, {"motivo": "Matrícula não confirmada na faculdade"}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.aluno_pendente_a.refresh_from_db()
+        self.assertEqual(self.aluno_pendente_a.status_aprovacao, TipoStatusAprovacao.REJEITADO)
+        self.assertIsNotNone(self.aluno_pendente_a.data_decisao)
+        self.assertEqual(self.aluno_pendente_a.avaliado_por, self.admin_alfa)
+
+    def test_aluno_nao_tem_permissao_para_acessar_painel_gestao_alunos(self):
+        """Aluno tentando acessar a lista de alunos ou aprovar recebe 403 Forbidden (IsTenantAdmin)."""
+        self.client.force_authenticate(user=self.user_aluno_a)
+
+        # Tentativa de listar alunos
+        resp_list = self.client.get('/api/alunos/')
+        self.assertEqual(resp_list.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Tentativa de aprovar
+        resp_aprovar = self.client.post(f"/api/alunos/{self.aluno_pendente_a.id}/aprovar/", {}, format='json')
+        self.assertEqual(resp_aprovar.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_cadastra_motorista_party_role_atomico(self):
+        """Admin cadastra Motorista criando atomicamente UsuarioAuth, Pessoa e Motorista."""
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload_motorista = {
+            "email": "motorista.antonio@alfa.sp.gov.br",
+            "password": "SenhaForteMotorista2026!",
+            "nome": "Antônio da Silva",
+            "cpf": "666.777.888-99",
+            "data_nascimento": "1978-04-12",
+            "cnh": "99887766554",
+            "categoria_cnh": "D",
+            "ativo": True
+        }
+
+        response = self.client.post('/api/motoristas/', payload_motorista, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        # Verifica persistência no banco
+        usuario = UsuarioAuth.objects.get(email="motorista.antonio@alfa.sp.gov.br")
+        self.assertTrue(usuario.check_password("SenhaForteMotorista2026!"))
+
+        pessoa = Pessoa.objects.get(usuario=usuario)
+        self.assertEqual(pessoa.nome, "Antônio da Silva")
+
+        motorista = Motorista.objects.get(pessoa=pessoa)
+        self.assertEqual(motorista.cnh, "99887766554")
+        self.assertEqual(motorista.categoria_cnh, "D")
+        self.assertEqual(motorista.cliente, self.prefeitura_a)
+
+    def test_aluno_pode_ler_rotas_mas_nao_pode_criar(self):
+        """Aluno pode consultar rotas de seu município, mas tem criação bloqueada (IsTenantAdminOrReadOnly)."""
+        # Cria rota para a prefeitura Alfa
+        rota = Rota.objects.create(cliente=self.prefeitura_a, nome="Linha 1 - Matutino", ativo=True)
+
+        self.client.force_authenticate(user=self.user_aluno_a)
+
+        # Leitura permitida (SAFE_METHOD)
+        resp_get = self.client.get('/api/rotas/')
+        self.assertEqual(resp_get.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(resp_get.data), 1)
+
+        # Escrita bloqueada para Aluno
+        resp_post = self.client.post('/api/rotas/', {"nome": "Linha Não Autorizada"}, format='json')
+        self.assertEqual(resp_post.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_admin_cadastra_rota_com_paradas_ordenadas(self):
+        """Admin cadastra rota vinculando instituições atendidas com ordem de parada."""
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload_rota = {
+            "nome": "Rota Universitária Noturna",
+            "ativo": True,
+            "paradas": [
+                {"instituicao_id": self.inst_a.id, "ordem_parada": 1}
+            ]
+        }
+
+        response = self.client.post('/api/rotas/', payload_rota, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        rota = Rota.objects.get(nome="Rota Universitária Noturna")
+        self.assertEqual(rota.cliente, self.prefeitura_a)
+        self.assertEqual(rota.rota_instituicoes.count(), 1)
+        self.assertEqual(rota.rota_instituicoes.first().instituicao, self.inst_a)
+
+    def test_admin_rejeitado_ao_vincular_instituicao_outro_tenant(self):
+        """Multi-tenant: Admin não pode incluir em sua rota uma instituição pertencente a outra prefeitura."""
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload_rota_invalida = {
+            "nome": "Rota Invasiva",
+            "paradas": [
+                {"instituicao_id": self.inst_b.id, "ordem_parada": 1}  # Instituição da Prefeitura Beta
+            ]
+        }
+
+        response = self.client.post('/api/rotas/', payload_rota_invalida, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("paradas", response.data)
+
 

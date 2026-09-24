@@ -34,7 +34,7 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
   - Configurar os endpoints de login JWT (geração e refresh de token).
 - [x] **Etapa 2.2: Middlewares e Isolamento Multi-tenant**
   - Sobrescrever o `get_queryset` nas Views do DRF para garantir que usuários de um Cliente (prefeitura) só vejam dados onde `cliente_id == seu_cliente_id`.
-- [ ] **Etapa 2.3: Endpoints de Gestão (CRUDs Básicos)**
+- [x] **Etapa 2.3: Endpoints de Gestão (CRUDs Básicos)**
   - Criar ViewSets e Serializers para: Veículos, Motoristas, Rotas, Escolas e Gestão de Alunos (Aprovação de Fila).
 - [ ] **Etapa 2.4: Lógica de Privacidade (LGPD)**
   - Criar endpoint para o Aluno solicitar exclusão.

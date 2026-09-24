@@ -14,6 +14,7 @@ from apps.core.views import (
     OnibusViewSet,
     MotoristaViewSet,
     RotaViewSet,
+    AlunoViewSet,
 )
 
 # Router para endpoints RESTful Multi-Tenant
@@ -23,6 +24,7 @@ router.register('veiculos/modelos', ModeloVeiculoViewSet, basename='modelo_veicu
 router.register('veiculos/onibus', OnibusViewSet, basename='onibus')
 router.register('motoristas', MotoristaViewSet, basename='motorista')
 router.register('rotas', RotaViewSet, basename='rota')
+router.register('alunos', AlunoViewSet, basename='aluno')
 
 urlpatterns = [
     # Infraestrutura
