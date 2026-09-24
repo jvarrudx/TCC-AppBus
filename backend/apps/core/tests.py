@@ -18,10 +18,14 @@ from apps.core.models import (
     Cliente,
     Instituicao,
     Aluno,
+    Administrador,
     Documento_Legal,
     Registro_Consentimento,
     TipoStatusAprovacao,
     TipoDocumentoLegal,
+    ModeloVeiculo,
+    Onibus,
+    Rota,
 )
 
 
@@ -277,3 +281,181 @@ class AlunoOnboardingTestCase(TestCase):
         response = self.client.post(self.url_registro, payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("termo_aceito", response.data)
+
+
+# ==============================================================================
+# 2. TESTES DE ISOLAMENTO MULTI-TENANT (Etapa 2.2 - agent.md 2.1)
+# ==============================================================================
+
+class MultiTenantIsolationTestCase(TestCase):
+    """
+    Testes de Segurança e Isolamento Multi-Tenant (Zero Trust).
+    Garante que nunca haja Data Leakage entre prefeituras e que qualquer
+    tentativa de Payload Injection seja bloqueada pelo TenantBaseViewSet.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+
+        # 1. Criação dos Clientes (Prefeituras A e B)
+        self.prefeitura_a = Cliente.objects.create(
+            cnpj="11.111.111/0001-11",
+            razao_social="Prefeitura Municipal Alfa",
+            nome_fantasia="Prefeitura Alfa",
+            ativo=True
+        )
+        self.prefeitura_b = Cliente.objects.create(
+            cnpj="22.222.222/0001-22",
+            razao_social="Prefeitura Municipal Beta",
+            nome_fantasia="Prefeitura Beta",
+            ativo=True
+        )
+
+        # 2. Modelo de Veículo Global (Catálogo)
+        self.modelo_veiculo = ModeloVeiculo.objects.create(
+            marca="Marcopolo",
+            nome="Viaggio 1050",
+            ativo=True
+        )
+
+        # 3. Administrador Municipal da Prefeitura Alfa
+        self.user_admin_a = UsuarioAuth.objects.create_user(
+            email="admin@prefeitura-alfa.sp.gov.br",
+            password="SenhaSegura123!",
+            is_staff=True
+        )
+        self.pessoa_admin_a = Pessoa.objects.create(
+            usuario=self.user_admin_a,
+            nome="Gestor Alfa",
+            cpf="111.111.111-11",
+            data_nascimento="1980-01-01"
+        )
+        self.admin_alfa = Administrador.objects.create(
+            pessoa=self.pessoa_admin_a,
+            cliente=self.prefeitura_a,
+            cargo="Secretário de Transporte",
+            ativo=True
+        )
+
+        # 4. Administrador Municipal da Prefeitura Beta
+        self.user_admin_b = UsuarioAuth.objects.create_user(
+            email="admin@prefeitura-beta.sp.gov.br",
+            password="SenhaSegura123!",
+            is_staff=True
+        )
+        self.pessoa_admin_b = Pessoa.objects.create(
+            usuario=self.user_admin_b,
+            nome="Gestor Beta",
+            cpf="222.222.222-22",
+            data_nascimento="1985-05-05"
+        )
+        self.admin_beta = Administrador.objects.create(
+            pessoa=self.pessoa_admin_b,
+            cliente=self.prefeitura_b,
+            cargo="Coordenador de Frotas",
+            ativo=True
+        )
+
+        # 5. Veículos das Prefeituras A e B
+        self.onibus_a = Onibus.objects.create(
+            cliente=self.prefeitura_a,
+            modelo=self.modelo_veiculo,
+            placa="ALF-1001",
+            capacidade=44,
+            ativo=True
+        )
+        self.onibus_b = Onibus.objects.create(
+            cliente=self.prefeitura_b,
+            modelo=self.modelo_veiculo,
+            placa="BET-2002",
+            capacidade=50,
+            ativo=True
+        )
+
+        self.url_onibus_list = "/api/veiculos/onibus/"
+        self.url_onibus_detail_a = f"/api/veiculos/onibus/{self.onibus_a.id}/"
+        self.url_onibus_detail_b = f"/api/veiculos/onibus/{self.onibus_b.id}/"
+
+    def test_bloqueio_requisicao_anonima(self):
+        """Zero Trust: Endpoints com escopo de tenant exigem autenticação obrigatória."""
+        response = self.client.get(self.url_onibus_list)
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_isolamento_leitura_nao_vaza_dados_outro_tenant(self):
+        """
+        Isolamento Multi-tenant (agent.md 2.1):
+        O gestor da Prefeitura Alfa NUNCA deve receber ônibus da Prefeitura Beta no get_queryset.
+        """
+        self.client.force_authenticate(user=self.user_admin_a)
+        response = self.client.get(self.url_onibus_list)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # O resultado deve conter exclusivamente o ônibus da Prefeitura Alfa
+        placas_retornadas = [item["placa"] for item in response.data]
+        self.assertIn("ALF-1001", placas_retornadas)
+        self.assertNotIn("BET-2002", placas_retornadas)
+
+    def test_tentativa_acesso_direto_id_outro_tenant_retorna_404(self):
+        """
+        Segurança anti-enumeração:
+        Tentar acessar diretamente por ID um registro de outra prefeitura retorna 404 (Not Found).
+        """
+        self.client.force_authenticate(user=self.user_admin_a)
+        # Gestor Alfa tentando consultar o Ônibus da Prefeitura Beta
+        response = self.client.get(self.url_onibus_detail_b)
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    def test_prevencao_payload_injection_cliente_id_no_post(self):
+        """
+        Blindagem de Escrita (agent.md 2.1):
+        Mesmo que o JSON contenha 'cliente_id' da Prefeitura Beta, o backend
+        injetará forçosamente a Prefeitura Alfa do usuário autenticado no perform_create.
+        """
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        payload_malicioso = {
+            "modelo": self.modelo_veiculo.id,
+            "placa": "INJ-9999",
+            "capacidade": 42,
+            # Tentativa de injeção: Forçar criação na Prefeitura Beta
+            "cliente_id": self.prefeitura_b.id
+        }
+
+        response = self.client.post(self.url_onibus_list, payload_malicioso, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        novo_onibus = Onibus.objects.get(placa="INJ-9999")
+        # O ônibus DEVE pertencer à Prefeitura Alfa (usuário logado) e NÃO à Prefeitura Beta
+        self.assertEqual(novo_onibus.cliente, self.prefeitura_a)
+        self.assertNotEqual(novo_onibus.cliente, self.prefeitura_b)
+
+    def test_prevencao_troca_tenant_no_patch(self):
+        """
+        Imutabilidade de Tenant:
+        Tentar reatribuir um ônibus existente para outra prefeitura via PATCH é ignorado.
+        """
+        self.client.force_authenticate(user=self.user_admin_a)
+
+        response = self.client.patch(
+            self.url_onibus_detail_a,
+            {"cliente_id": self.prefeitura_b.id, "capacidade": 46},
+            format='json'
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self.onibus_a.refresh_from_db()
+        self.assertEqual(self.onibus_a.capacidade, 46)
+        # Permanece com o tenant da Prefeitura Alfa
+        self.assertEqual(self.onibus_a.cliente, self.prefeitura_a)
+
+    def test_usuario_sem_tenant_acesso_negado(self):
+        """Usuário autenticado mas sem vínculo a nenhuma prefeitura tem acesso negado (403)."""
+        usuario_sem_role = UsuarioAuth.objects.create_user(
+            email="sem.tenant@teste.com",
+            password="SenhaSegura123!"
+        )
+        self.client.force_authenticate(user=usuario_sem_role)
+
+        response = self.client.get(self.url_onibus_list)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+

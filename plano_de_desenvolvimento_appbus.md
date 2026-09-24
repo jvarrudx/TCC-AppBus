@@ -32,7 +32,7 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
   - Criar endpoint de registro de Aluno (recebe dados pessoais, senha e aceite dos termos).
   - Implementar a transação atômica (`transaction.atomic`) para salvar nas tabelas: Usuario_Auth -> Pessoa -> Aluno -> Registro_Consentimento.
   - Configurar os endpoints de login JWT (geração e refresh de token).
-- [ ] **Etapa 2.2: Middlewares e Isolamento Multi-tenant**
+- [x] **Etapa 2.2: Middlewares e Isolamento Multi-tenant**
   - Sobrescrever o `get_queryset` nas Views do DRF para garantir que usuários de um Cliente (prefeitura) só vejam dados onde `cliente_id == seu_cliente_id`.
 - [ ] **Etapa 2.3: Endpoints de Gestão (CRUDs Básicos)**
   - Criar ViewSets e Serializers para: Veículos, Motoristas, Rotas, Escolas e Gestão de Alunos (Aprovação de Fila).

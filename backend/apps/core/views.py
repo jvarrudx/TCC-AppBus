@@ -2,29 +2,46 @@
 Core API Views for AppBus.
 
 Architectural Guidelines (agent.md):
-- Multi-tenancy (2.1): CustomTokenObtainPairView embeds cliente_id and role.
-- Party/Role Pattern (2.2): AlunoRegistroView guarantees atomic creation of
-  UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
+- Multi-tenancy (2.1):
+  - CustomTokenObtainPairView embeds cliente_id and role into JWT claims.
+  - TenantBaseViewSet enforces Zero-Trust isolation by filtering all querysets by request.user.pessoa.cliente_id.
+  - Perform_create and perform_update strictly inject the user's tenant, preventing payload injection.
+- Party/Role Pattern (2.2):
+  - AlunoRegistroView guarantees atomic creation of UsuarioAuth -> Pessoa -> Aluno -> Registro_Consentimento.
 - LGPD Compliance (2.3):
-  1. No client-supplied IP/User-Agent in payload; strictly inferred from HTTP request headers.
-  2. Legal documents list for informed consent prior to onboarding.
-  3. No plaintext passwords.
+  - No client-supplied IP/User-Agent in payload; strictly inferred from HTTP request headers.
+  - Legal documents list for informed consent prior to onboarding.
+  - Passwords strictly hashed.
 """
 
 import logging
 from django.db import transaction, connection
-from rest_framework import generics, status
+from rest_framework import generics, viewsets, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework.permissions import AllowAny
+from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 
-from apps.core.models import Documento_Legal, Aluno
+from apps.core.models import (
+    Documento_Legal,
+    Aluno,
+    Instituicao,
+    ModeloVeiculo,
+    Onibus,
+    Motorista,
+    Rota,
+)
+from apps.core.mixins import TenantBaseViewSet, get_user_cliente
 from apps.core.serializers import (
     CustomTokenObtainPairSerializer,
     AlunoRegistroSerializer,
     AlunoDetalheResponseSerializer,
     DocumentoLegalSerializer,
+    InstituicaoSerializer,
+    ModeloVeiculoSerializer,
+    OnibusSerializer,
+    MotoristaSerializer,
+    RotaSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -130,3 +147,53 @@ class DocumentoLegalVigenteListView(generics.ListAPIView):
     permission_classes = [AllowAny]
     serializer_class = DocumentoLegalSerializer
     queryset = Documento_Legal.objects.filter(ativo=True).order_by('-data_publicacao')
+
+
+# ==============================================================================
+# 5. VIEWSETS CORE COM ISOLAMENTO MULTI-TENANT (Etapa 2.2 - agent.md 2.1)
+# ==============================================================================
+
+class InstituicaoViewSet(TenantBaseViewSet):
+    """
+    Gestão de Instituições de Ensino vinculadas ao município (Tenant).
+    Herda isolamento completo de leitura e escrita de TenantBaseViewSet.
+    """
+    queryset = Instituicao.objects.all()
+    serializer_class = InstituicaoSerializer
+
+
+class ModeloVeiculoViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    Catálogo Global de Modelos de Veículos (Marcopolo, Mercedes-Benz, etc.).
+    Não possui cliente_id; acessível como leitura compartilhada para todos os municípios.
+    """
+    permission_classes = [IsAuthenticated]
+    queryset = ModeloVeiculo.objects.filter(ativo=True)
+    serializer_class = ModeloVeiculoSerializer
+
+
+class OnibusViewSet(TenantBaseViewSet):
+    """
+    Gestão da Frota Municipal de Ônibus.
+    Isolamento estrito: um administrador da "Prefeitura A" só acessa os veículos
+    da "Prefeitura A". O payload cliente_id é sumariamente ignorado na criação.
+    """
+    queryset = Onibus.objects.select_related('modelo', 'cliente').all()
+    serializer_class = OnibusSerializer
+
+
+class MotoristaViewSet(TenantBaseViewSet):
+    """
+    Gestão de Motoristas Municipais.
+    Padrão Party/Role: vincula a entidade Pessoa e o papel de Motorista à prefeitura do usuário.
+    """
+    queryset = Motorista.objects.select_related('pessoa', 'cliente').all()
+    serializer_class = MotoristaSerializer
+
+
+class RotaViewSet(TenantBaseViewSet):
+    """
+    Gestão das Rotas e Itinerários Municipais.
+    """
+    queryset = Rota.objects.prefetch_related('rota_instituicoes__instituicao').all()
+    serializer_class = RotaSerializer

@@ -34,6 +34,10 @@ from apps.core.models import (
     Registro_Consentimento,
     TipoStatusAprovacao,
     TipoDocumentoLegal,
+    ModeloVeiculo,
+    Onibus,
+    Rota,
+    RotaInstituicao,
 )
 
 logger = logging.getLogger(__name__)
@@ -489,3 +493,101 @@ class AlunoDetalheResponseSerializer(serializers.ModelSerializer):
             'status_aprovacao_display',
             'data_solicitacao'
         ]
+
+
+# ==============================================================================
+# 4. ENTIDADES CORE MULTI-TENANT (Etapa 2.2 - Gestão e Operação)
+# ==============================================================================
+
+class InstituicaoSerializer(serializers.ModelSerializer):
+    """Serializer para Instituições de Ensino com escopo de tenant."""
+    cliente_id = serializers.IntegerField(read_only=True)
+
+    class Meta:
+        model = Instituicao
+        fields = ['id', 'cliente_id', 'nome', 'sigla', 'endereco', 'ativo']
+
+
+class ModeloVeiculoSerializer(serializers.ModelSerializer):
+    """Catálogo global de modelos de veículos rodoviários."""
+    class Meta:
+        model = ModeloVeiculo
+        fields = ['id', 'marca', 'nome', 'ativo', 'created_at', 'updated_at']
+
+
+class OnibusSerializer(serializers.ModelSerializer):
+    """
+    Serializer para Veículos da Frota Municipal.
+    O cliente_id e qr_code_uuid são estritamente somente leitura para evitar manipulação.
+    """
+    cliente_id = serializers.IntegerField(read_only=True)
+    qr_code_uuid = serializers.UUIDField(read_only=True)
+    modelo_detalhe = ModeloVeiculoSerializer(source='modelo', read_only=True)
+
+    class Meta:
+        model = Onibus
+        fields = [
+            'id',
+            'cliente_id',
+            'modelo',
+            'modelo_detalhe',
+            'placa',
+            'capacidade',
+            'qr_code_uuid',
+            'ativo',
+            'created_at',
+            'updated_at'
+        ]
+
+
+class MotoristaSerializer(serializers.ModelSerializer):
+    """
+    Serializer para Motoristas municipais seguindo o padrão Party/Role.
+    Dados civis extraídos da entidade Pessoa.
+    """
+    cliente_id = serializers.IntegerField(read_only=True)
+    nome = serializers.CharField(source='pessoa.nome', read_only=True)
+    cpf = serializers.CharField(source='pessoa.cpf', read_only=True)
+
+    class Meta:
+        model = Motorista
+        fields = [
+            'id',
+            'cliente_id',
+            'pessoa_id',
+            'nome',
+            'cpf',
+            'cnh',
+            'categoria_cnh',
+            'ativo'
+        ]
+
+
+class RotaInstituicaoSerializer(serializers.ModelSerializer):
+    """Mapeamento de paradas de instituições em uma rota."""
+    instituicao_nome = serializers.CharField(source='instituicao.nome', read_only=True)
+
+    class Meta:
+        model = RotaInstituicao
+        fields = ['id', 'instituicao', 'instituicao_nome', 'ordem_parada']
+
+
+class RotaSerializer(serializers.ModelSerializer):
+    """
+    Serializer para Rotas municipais com instituições agregadas.
+    """
+    cliente_id = serializers.IntegerField(read_only=True)
+    paradas = RotaInstituicaoSerializer(source='rota_instituicoes', many=True, read_only=True)
+
+    class Meta:
+        model = Rota
+        fields = [
+            'id',
+            'cliente_id',
+            'nome',
+            'ativo',
+            'paradas',
+            'created_at',
+            'updated_at'
+        ]
+
