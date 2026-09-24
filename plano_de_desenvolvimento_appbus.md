@@ -49,8 +49,17 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
 
 ## Fase 3: Frontend PWA - Infraestrutura e Painéis Web (Admin/Motorista)
 *Início da construção visual utilizando Vue.js.*
+Atuando como Engenheiro Frontend Sênior e Especialista em UI/UX, iniciaremos agora a "Fase 3: Frontend PWA" do nosso projeto AppBus. O backend (Django REST) está 100% concluído e blindado.
 
-- [ ] **Etapa 3.1: Setup do Vue.js + PWA**
+### Diretrizes Arquiteturais e de Design (Invioláveis)
+- **Tech Stack:** Vue 3 (Composition API com `<script setup>`), Vite, Quasar Framework, Pinia e Axios.
+- **Abordagem UI/UX:** "Mobile-First" extremo. A interface será um PWA utilizado principalmente por estudantes e motoristas em trânsito. O design deve ser *Clean*, com botões grandes e navegação fluida em telas pequenas.
+- **Identidade Visual (Tema):** 
+  - Fundo predominante: Modo Escuro (Preto ou Azul muito escuro, ex: `#121212` ou `#0B0F19`).
+  - Cor de Destaque (Primary): Amarelo Ônibus Escolar (ex: `#F2C037` ou `#FFC107`).
+  - Todo o texto primário deve ter alto contraste (branco/gelo) e as chamadas para ação (CTAs) usarão o amarelo de destaque.
+  
+- [x] **Etapa 3.1: Setup do Vue.js + PWA**
   - Iniciar projeto Vue 3 (Composition API, Vite).
   - Configurar `vite-plugin-pwa` para gerar o Service Worker básico, Manifest (ícones, nome, tema) e habilitar instalação do PWA.
   - Configurar o Vue Router e o gerenciamento de estado (Pinia).

@@ -1,0 +1,86 @@
+// AppBus Global Styles - Mobile-First & Dark High-Contrast
+
+html, body {
+  background-color: #0B0F19;
+  color: #F8FAFC;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  touch-action: manipulation;
+}
+
+// Estilização Quasar no Modo Escuro Padrão
+.body--dark {
+  background: #0B0F19 !important;
+  color: #F8FAFC;
+}
+
+// Scrollbars sutis e escuras
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #0B0F19;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1E293B;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+// Utilitários para Mobile-First
+.app-container-mobile {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+// Botões Primários com Amarelo de Destaque e Texto Escuro de Alto Contraste
+.q-btn.bg-primary, .btn-bus-primary {
+  color: #0B0F19 !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.025em;
+  text-transform: none !important;
+  border-radius: 12px !important;
+  transition: all 0.2s ease-in-out;
+
+  &:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(242, 192, 55, 0.35);
+  }
+
+  &:active {
+    transform: translateY(0);
+  }
+}
+
+// Cartões no Modo Escuro
+.q-card.dark-card {
+  background: #121826 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+}
+
+// Badges de Status
+.badge-role {
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}

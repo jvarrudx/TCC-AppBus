@@ -1,10 +1,18 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { quasar, transformAssetUrls } from '@quasar/vite-plugin'
 import { VitePWA } from 'vite-plugin-pwa'
+
+import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
   plugins: [
-    vue(),
+    vue({
+      template: { transformAssetUrls }
+    }),
+    quasar({
+      sassVariables: fileURLToPath(new URL('./src/css/quasar.variables.scss', import.meta.url))
+    }),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
@@ -12,8 +20,8 @@ export default defineConfig({
         name: 'AppBus - Transporte Universitário',
         short_name: 'AppBus',
         description: 'Sistema Inteligente de Transporte Universitário e Gestão de Frotas',
-        theme_color: '#0f172a',
-        background_color: '#0f172a',
+        theme_color: '#F2C037',
+        background_color: '#121212',
         display: 'standalone',
         orientation: 'portrait',
         icons: [
@@ -43,11 +51,22 @@ export default defineConfig({
       }
     })
   ],
+  resolve: {
+    alias: {
+      '@': '/src'
+    }
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
     watch: {
       usePolling: true
+    },
+    proxy: {
+      '/api': {
+        target: 'http://web:8000',
+        changeOrigin: true
+      }
     }
   }
 })
