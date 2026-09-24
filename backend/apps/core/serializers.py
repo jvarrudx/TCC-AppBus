@@ -814,3 +814,40 @@ class RotaCreateUpdateSerializer(serializers.ModelSerializer):
             )
 
 
+# ==============================================================================
+# 6. LGPD & ANONIMIZAÇÃO DE CONTA (Etapa 2.4 - agent.md 2.3)
+# ==============================================================================
+
+class AnonimizacaoContaSerializer(serializers.Serializer):
+    """
+    Serializer para o endpoint de auto-exclusão e anonimização de conta do titular.
+    Exige confirmação expressa e senha do usuário para evitar exclusões acidentais ou maliciosas.
+    """
+    password = serializers.CharField(
+        write_only=True,
+        required=True,
+        help_text="Senha atual do titular para confirmação de identidade."
+    )
+    confirmacao = serializers.BooleanField(
+        required=True,
+        help_text="Confirmação expressa da revogação de consentimento e anonimização irreversível dos dados."
+    )
+
+    def validate_confirmacao(self, value):
+        if not value:
+            raise serializers.ValidationError(
+                "A confirmação expressa é obrigatória para processar a anonimização dos dados."
+            )
+        return value
+
+    def validate_password(self, value):
+        request = self.context.get('request')
+        if not request or not request.user or not request.user.is_authenticated:
+            raise serializers.ValidationError("Usuário não autenticado.")
+
+        if not request.user.check_password(value):
+            raise serializers.ValidationError("Senha incorreta. Não foi possível confirmar a titularidade da conta.")
+        return value
+
+
+

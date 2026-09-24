@@ -27,7 +27,15 @@ from apps.core.models import (
     Onibus,
     Motorista,
     Rota,
+    Viagem,
+    PrevisaoViagem,
+    Embarque,
+    SentidoViagem,
+    StatusViagem,
+    MetodoValidacao,
 )
+from datetime import date
+from django.utils import timezone
 
 
 class AlunoOnboardingTestCase(TestCase):
@@ -688,5 +696,162 @@ class GestaoCrudEFilaAprovacaoTestCase(TestCase):
         response = self.client.post('/api/rotas/', payload_rota_invalida, format='json')
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("paradas", response.data)
+
+
+# ==============================================================================
+# 4. TESTES DE PRIVACIDADE E ANONIMIZAÇÃO LGPD (Etapa 2.4 - agent.md 2.3)
+# ==============================================================================
+
+class LGPDPrivacidadeAnonimizacaoTestCase(TestCase):
+    """
+    Testes do Direito ao Esquecimento e Eliminação de Dados (LGPD Art. 18, VI).
+    Valida mascaramento irreversível de PII, revogação de acesso e a regra estrita
+    de NÃO EXECUTAR HARD DELETES para salvaguarda do histórico municipal de embarques.
+    """
+
+    def setUp(self):
+        self.client = APIClient()
+
+        # 1. Tenant e Escola
+        self.cliente = Cliente.objects.create(
+            cnpj="30.000.000/0001-30",
+            razao_social="Prefeitura Municipal Delta",
+            nome_fantasia="Prefeitura Delta",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Universidade Delta",
+            sigla="UNIDELTA",
+            ativo=True
+        )
+
+        # 2. Aluno com dados civis completos
+        self.senha_aluno = "MinhaSenhaForte2026!"
+        self.usuario_aluno = UsuarioAuth.objects.create_user(
+            email="aluno.lgpd@delta.edu.br",
+            password=self.senha_aluno,
+            ativo=True
+        )
+        self.pessoa_aluno = Pessoa.objects.create(
+            usuario=self.usuario_aluno,
+            nome="Lucas dos Santos PII",
+            cpf="777.888.999-00",
+            data_nascimento="2001-08-14",
+            anonimizado=False
+        )
+        self.aluno = Aluno.objects.create(
+            pessoa=self.pessoa_aluno,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula="MAT-2026-99",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+        # 3. Frota, Rota e Motorista
+        self.modelo = ModeloVeiculo.objects.create(marca="Marcopolo", nome="Senior")
+        self.onibus = Onibus.objects.create(cliente=self.cliente, modelo=self.modelo, placa="DLT-3030", capacidade=30)
+        self.rota = Rota.objects.create(cliente=self.cliente, nome="Linha Delta Campus")
+        self.user_mot = UsuarioAuth.objects.create_user(email="mot.delta@delta.gov.br", password="SenhaMotorista123!")
+        self.pessoa_mot = Pessoa.objects.create(usuario=self.user_mot, nome="Motorista Delta", cpf="123.123.123-12")
+        self.motorista = Motorista.objects.create(pessoa=self.pessoa_mot, cliente=self.cliente, cnh="55443322110")
+
+        # 4. Histórico Operacional (Previsão de Viagem e Registro de Embarque)
+        self.viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.CONCLUIDA,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+        self.previsao = PrevisaoViagem.objects.create(
+            aluno=self.aluno,
+            data=date.today(),
+            vai_ida=True,
+            vai_volta=True
+        )
+        self.embarque = Embarque.objects.create(
+            viagem=self.viagem,
+            aluno=self.aluno,
+            metodo_validacao=MetodoValidacao.QR_CODE_APP,
+            timestamp=timezone.now()
+        )
+
+        self.url_exclusao = "/api/auth/solicitar-exclusao/"
+
+    def test_bloqueio_requisicao_anonima_de_exclusao(self):
+        """Tentativa de solicitar exclusão sem autenticação é rejeitada (401)."""
+        response = self.client.post(self.url_exclusao, {"password": self.senha_aluno, "confirmacao": True}, format='json')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+    def test_rejeicao_com_senha_incorreta(self):
+        """Tentativa de anonimização com senha incorreta é barrada com 400 Bad Request."""
+        self.client.force_authenticate(user=self.usuario_aluno)
+        payload = {"password": "SenhaCompletamenteErrada!", "confirmacao": True}
+
+        response = self.client.post(self.url_exclusao, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("password", response.data)
+
+        # Dados permanecem inalterados
+        self.pessoa_aluno.refresh_from_db()
+        self.assertFalse(self.pessoa_aluno.anonimizado)
+        self.assertEqual(self.pessoa_aluno.nome, "Lucas dos Santos PII")
+
+    def test_rejeicao_sem_confirmacao_expressa(self):
+        """Exige confirmação explícita de revogação de consentimento."""
+        self.client.force_authenticate(user=self.usuario_aluno)
+        payload = {"password": self.senha_aluno, "confirmacao": False}
+
+        response = self.client.post(self.url_exclusao, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("confirmacao", response.data)
+
+    def test_anonimizacao_sucesso_sem_hard_deletes(self):
+        """
+        LGPD Compliance (agent.md 2.3):
+        Valida que o processo mascara nome, CPF, endereço, inativa login e
+        NÃO DELETA registros de Aluno, Previsão ou Embarques históricos.
+        """
+        self.client.force_authenticate(user=self.usuario_aluno)
+        payload = {"password": self.senha_aluno, "confirmacao": True}
+
+        response = self.client.post(self.url_exclusao, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertTrue(response.data["anonimizado"])
+
+        # 1. Validação na entidade Pessoa (PII mascarada)
+        self.pessoa_aluno.refresh_from_db()
+        self.assertTrue(self.pessoa_aluno.anonimizado)
+        self.assertEqual(self.pessoa_aluno.nome, "Usuário Anonimizado")
+        self.assertIsNone(self.pessoa_aluno.cpf)
+        self.assertIsNone(self.pessoa_aluno.data_nascimento)
+        self.assertIsNone(self.pessoa_aluno.endereco)
+
+        # 2. Validação nas credenciais de autenticação
+        self.usuario_aluno.refresh_from_db()
+        self.assertFalse(self.usuario_aluno.ativo)
+        self.assertFalse(self.usuario_aluno.has_usable_password())
+        self.assertTrue(self.usuario_aluno.email.startswith("anonimizado_"))
+
+        # 3. Validação no papel Aluno
+        self.aluno.refresh_from_db()
+        self.assertTrue(self.aluno.matricula.startswith("ANON_"))
+
+        # 4. REGRA CRÍTICA DE OURO: ZERO HARD DELETES
+        # O histórico operacional permanece intacto no banco de dados
+        self.assertTrue(Aluno.objects.filter(id=self.aluno.id).exists())
+        self.assertTrue(PrevisaoViagem.objects.filter(id=self.previsao.id).exists())
+        self.assertTrue(Embarque.objects.filter(id=self.embarque.id).exists())
+
+        # 5. Tentativa de novo login com a conta anonimizada é bloqueada
+        login_resp = self.client.post('/api/token/', {
+            "email": "aluno.lgpd@delta.edu.br",
+            "password": self.senha_aluno
+        }, format='json')
+        self.assertEqual(login_resp.status_code, status.HTTP_401_UNAUTHORIZED)
+
 
 

@@ -339,10 +339,12 @@ class Pessoa(models.Model):
     def anonimizar(self):
         """
         LGPD (No Hard Deletes - agent.md 2.3):
-        1. Inativa Usuario_Auth (bloqueio de login).
-        2. Seta Pessoa.anonimizado = True.
-        3. Mascara PII (nome = 'Usuário Anonimizado', limpa CPF, data de nascimento e endereço).
-        4. Preserva IDs para resguardar o histórico imutável de Embarques.
+        1. Inativa Usuario_Auth (bloqueio de login e invalidação de senha).
+        2. Mascara e-mail do usuário para desvincular PII e liberar e-mail original.
+        3. Seta Pessoa.anonimizado = True.
+        4. Mascara PII (nome = 'Usuário Anonimizado', limpa CPF, data de nascimento e endereço).
+        5. Mascara matrícula estudantil caso exista o papel de Aluno.
+        6. Preserva IDs para resguardar o histórico imutável de Embarques para prestação de contas.
         """
         self.nome = "Usuário Anonimizado"
         self.cpf = None
@@ -351,10 +353,18 @@ class Pessoa(models.Model):
         self.anonimizado = True
         self.save()
 
-        # Inativa as credenciais de autenticação
+        # Inativa as credenciais de autenticação, invalida hash e remove PII de email
         if self.usuario:
             self.usuario.ativo = False
+            self.usuario.set_unusable_password()
+            self.usuario.email = f"anonimizado_{self.usuario.id}@appbus.local"
             self.usuario.save()
+
+        # Mascara matrícula estudantil se houver papel Aluno
+        if hasattr(self, 'aluno'):
+            aluno = self.aluno
+            aluno.matricula = f"ANON_{aluno.id}"
+            aluno.save(update_fields=['matricula'])
 
 
 # ==============================================================================

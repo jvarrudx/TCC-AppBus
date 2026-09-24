@@ -55,6 +55,7 @@ from apps.core.serializers import (
     AlunoDecisaoSerializer,
     MotoristaCreateSerializer,
     RotaCreateUpdateSerializer,
+    AnonimizacaoContaSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,6 +161,67 @@ class DocumentoLegalVigenteListView(generics.ListAPIView):
     permission_classes = [AllowAny]
     serializer_class = DocumentoLegalSerializer
     queryset = Documento_Legal.objects.filter(ativo=True).order_by('-data_publicacao')
+
+
+class AnonimizacaoContaView(APIView):
+    """
+    Endpoint de Auto-Exclusão e Anonimização de Conta do Titular (POST /api/auth/solicitar-exclusao/).
+    Atendimento ao Direito de Eliminação de Dados Pessoais (LGPD Art. 18, VI).
+    
+    Regras Estritas de Segurança (agent.md 2.3):
+    1. Zero Hard Deletes: Não executa .delete() no banco de dados.
+    2. Mascaramento Irreversível de PII:
+       - Pessoa.nome = "Usuário Anonimizado"
+       - Pessoa.cpf = None
+       - Pessoa.data_nascimento = None
+       - Pessoa.endereco = None
+       - Pessoa.anonimizado = True
+       - Aluno.matricula = f"ANON_{id}" (se aplicável)
+    3. Revogação de Credenciais:
+       - UsuarioAuth.ativo = False
+       - UsuarioAuth.set_unusable_password()
+       - UsuarioAuth.email = f"anonimizado_{id}@appbus.local"
+    4. Preservação de Histórico de Auditoria:
+       - Mantém registros de Viagem, PrevisaoViagem e Embarque intactos
+         para comprovação de serviço junto às prefeituras e órgãos fiscais.
+    """
+    permission_classes = [IsAuthenticated]
+
+    @transaction.atomic
+    def post(self, request, *args, **kwargs):
+        serializer = AnonimizacaoContaSerializer(data=request.data, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        if not hasattr(user, 'pessoa'):
+            return Response(
+                {"erro": "Usuário não possui perfil civil vinculado para anonimização."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        pessoa = user.pessoa
+        if pessoa.anonimizado:
+            return Response(
+                {"mensagem": "Esta conta já se encontra devidamente anonimizada."},
+                status=status.HTTP_200_OK
+            )
+
+        # Executa a rotina de anonimização (No Hard Deletes)
+        pessoa.anonimizar()
+
+        logger.info(
+            f"[LGPD Anonimização] Conta de Pessoa ID={pessoa.id} e Usuario ID={user.id} "
+            f"anonimizada com sucesso a pedido do titular."
+        )
+
+        return Response(
+            {
+                "mensagem": "Sua conta e dados pessoais foram anonimizados com sucesso conforme a LGPD. Seu acesso foi revogado.",
+                "anonimizado": True
+            },
+            status=status.HTTP_200_OK
+        )
+
 
 
 # ==============================================================================

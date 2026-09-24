@@ -36,7 +36,7 @@ Este documento traduz o planejamento arquitetural e o escopo do TCC em um roteir
   - Sobrescrever o `get_queryset` nas Views do DRF para garantir que usuários de um Cliente (prefeitura) só vejam dados onde `cliente_id == seu_cliente_id`.
 - [x] **Etapa 2.3: Endpoints de Gestão (CRUDs Básicos)**
   - Criar ViewSets e Serializers para: Veículos, Motoristas, Rotas, Escolas e Gestão de Alunos (Aprovação de Fila).
-- [ ] **Etapa 2.4: Lógica de Privacidade (LGPD)**
+- [x] **Etapa 2.4: Lógica de Privacidade (LGPD)**
   - Criar endpoint para o Aluno solicitar exclusão.
   - Implementar a lógica de Anonimização (mascarar nome, CPF, setar `anonimizado=True`, inativar usuário auth), sem usar o comando `DELETE` no banco.
 - [ ] **Etapa 2.5: Fluxos Operacionais Core (Endpoints)**
