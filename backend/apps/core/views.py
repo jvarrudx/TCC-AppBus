@@ -26,6 +26,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from apps.core.models import (
+    Cliente,
     Documento_Legal,
     Aluno,
     Instituicao,
@@ -177,6 +178,36 @@ class DocumentoLegalVigenteListView(generics.ListAPIView):
     permission_classes = [AllowAny]
     serializer_class = DocumentoLegalSerializer
     queryset = Documento_Legal.objects.filter(ativo=True).order_by('-data_publicacao')
+
+
+class DadosAdesaoPublicView(APIView):
+    """
+    Endpoint público (GET /api/public/dados-adesao/) para alimentar dinamicamente
+    o formulário de auto-cadastro de novos alunos (Etapa 3.2).
+    Retorna as Prefeituras ativas e suas respectivas Instituições de Ensino credenciadas,
+    permitindo filtragem reativa e seleção consistente sem hardcoding no frontend.
+    """
+    permission_classes = [AllowAny]
+
+    def get(self, request, *args, **kwargs):
+        clientes = Cliente.objects.filter(ativo=True).prefetch_related('instituicoes').order_by('razao_social')
+        dados = []
+        for c in clientes:
+            instituicoes = [
+                {
+                    'id': inst.id,
+                    'nome': inst.nome,
+                    'sigla': inst.sigla or ''
+                }
+                for inst in c.instituicoes.filter(ativo=True).order_by('nome')
+            ]
+            dados.append({
+                'id': c.id,
+                'nome': c.nome_fantasia or c.razao_social,
+                'cnpj': c.cnpj,
+                'instituicoes': instituicoes
+            })
+        return Response(dados, status=status.HTTP_200_OK)
 
 
 class AnonimizacaoContaView(APIView):

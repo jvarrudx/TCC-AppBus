@@ -142,7 +142,7 @@
 </template>
 
 <script setup>
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '../stores/authStore'
@@ -157,6 +157,21 @@ const password = ref('')
 const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
+
+onMounted(() => {
+  if (route.query.email) {
+    email.value = String(route.query.email)
+  }
+  if (route.query.registered === 'true') {
+    $q.notify({
+      type: 'positive',
+      icon: 'how_to_reg',
+      message: 'Cadastro efetuado com sucesso!',
+      caption: 'Insira sua senha cadastrada para entrar.',
+      timeout: 6000
+    })
+  }
+})
 
 const profiles = [
   {

@@ -9,6 +9,7 @@ from apps.core.views import (
     HealthCheckView,
     AlunoRegistroView,
     DocumentoLegalVigenteListView,
+    DadosAdesaoPublicView,
     InstituicaoViewSet,
     ModeloVeiculoViewSet,
     OnibusViewSet,
@@ -37,8 +38,9 @@ urlpatterns = [
     # Infraestrutura
     path('health/', HealthCheckView.as_view(), name='health_check'),
 
-    # Autenticação e Onboarding de Alunos (Etapa 2.1)
+    # Autenticação e Onboarding de Alunos (Etapa 2.1 & 3.2)
     path('auth/registro-aluno/', AlunoRegistroView.as_view(), name='aluno_registro'),
+    path('public/dados-adesao/', DadosAdesaoPublicView.as_view(), name='dados_adesao_public'),
 
     # Governança e LGPD (Etapa 2.4 - Direito ao Esquecimento sem Hard Deletes)
     path('documentos-legais/vigentes/', DocumentoLegalVigenteListView.as_view(), name='documentos_legais_vigentes'),

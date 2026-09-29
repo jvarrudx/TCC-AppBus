@@ -64,7 +64,7 @@ Atuando como Engenheiro Frontend Sênior e Especialista em UI/UX, iniciaremos ag
   - Configurar `vite-plugin-pwa` para gerar o Service Worker básico, Manifest (ícones, nome, tema) e habilitar instalação do PWA.
   - Configurar o Vue Router e o gerenciamento de estado (Pinia).
   - Configurar o Axios (interceptors para injetar JWT Token e lidar com refresh).
-- [ ] **Etapa 3.2: Telas de Autenticação**
+- [x] **Etapa 3.2: Telas de Autenticação**
   - Tela de Login (Diferenciando visualmente ou logicamente perfis: Aluno, Motorista, Gestor).
   - Tela de Auto-cadastro (Com lógica condicional: se < 18 anos, exibir campo CPF do Responsável; checkbox obrigatório para Termos de Uso).
 - [ ] **Etapa 3.3: Dashboard do Cliente (Web Admin)**
