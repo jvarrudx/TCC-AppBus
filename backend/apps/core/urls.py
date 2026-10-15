@@ -17,6 +17,7 @@ from apps.core.views import (
     RotaViewSet,
     AlunoViewSet,
     AnonimizacaoContaView,
+    PerfilUsuarioView,
     PredicaoDemandaView,
     IniciarViagemView,
     ConcluirViagemView,
@@ -46,6 +47,7 @@ urlpatterns = [
 
     # Governança e LGPD (Etapa 2.4 - Direito ao Esquecimento sem Hard Deletes)
     path('documentos-legais/vigentes/', DocumentoLegalVigenteListView.as_view(), name='documentos_legais_vigentes'),
+    path('auth/perfil/', PerfilUsuarioView.as_view(), name='auth_perfil'),
     path('auth/solicitar-exclusao/', AnonimizacaoContaView.as_view(), name='solicitar_exclusao'),
 
     # Fluxos Operacionais Core (Etapa 2.5 - Predição, Viagem, Embarque e Dashboard)

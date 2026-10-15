@@ -81,14 +81,14 @@ Atuando como Engenheiro Frontend Sênior e Especialista em UI/UX, iniciaremos ag
 ## Fase 4: Módulo do Aluno e Validação PWA
 *A experiência do usuário final e os recursos de hardware do dispositivo.*
 
-- [ ] **Etapa 4.1: Painel Principal do Aluno e Predição**
+- [x] **Etapa 4.1: Painel Principal do Aluno e Predição**
   - Interface estilo "Mobile First".
   - Exibição de cards de viagem do dia.
   - Botões de seleção rápida (Toggle): "Vou na Ida" / "Não vou na Volta". (Dispara PATCH automático para a API).
-- [ ] **Etapa 4.2: Leitor de QR Code (Embarque Óptico)**
+- [x] **Etapa 4.2: Leitor de QR Code (Embarque Óptico)**
   - Integrar biblioteca de leitura óptica (ex: `html5-qrcode` ou `vue-qrcode-reader`).
   - Lógica: Ao clicar em "Embarcar", abrir câmera -> ler UUID -> disparar POST para API -> Exibir Tela Verde (Sucesso) ou Vermelha (Erro).
-- [ ] **Etapa 4.3: Tela de Perfil e LGPD**
+- [x] **Etapa 4.3: Tela de Perfil e LGPD**
   - Visualização de dados do perfil.
   - Botão "Gerenciar Privacidade" -> Opção para "Revogar Consentimento e Excluir Conta" (Aciona o endpoint de anonimização do backend).
 - [ ] **Etapa 4.4: Testes e Refinamento MVP**

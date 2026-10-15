@@ -133,12 +133,22 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         cliente_id = None
         status_aprovacao = None
 
+        aluno_data = None
         if hasattr(self.user, 'pessoa'):
             pessoa = self.user.pessoa
             if hasattr(pessoa, 'aluno'):
                 role = 'aluno'
                 cliente_id = pessoa.aluno.cliente_id
                 status_aprovacao = pessoa.aluno.status_aprovacao
+                aluno = pessoa.aluno
+                aluno_data = {
+                    "id": aluno.id,
+                    "matricula": aluno.matricula,
+                    "instituicao_id": aluno.instituicao_id,
+                    "instituicao_nome": aluno.instituicao.nome if aluno.instituicao else None,
+                    "instituicao_sigla": aluno.instituicao.sigla if aluno.instituicao else None,
+                    "cliente_nome": aluno.cliente.nome_fantasia or aluno.cliente.razao_social if aluno.cliente else None,
+                }
             elif hasattr(pessoa, 'motorista'):
                 role = 'motorista'
                 cliente_id = pessoa.motorista.cliente_id
@@ -159,7 +169,8 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
             "role": role,
             "cliente_id": cliente_id,
             "status_aprovacao": status_aprovacao,
-            "pessoa": pessoa_data
+            "pessoa": pessoa_data,
+            "aluno": aluno_data
         }
         return data
 

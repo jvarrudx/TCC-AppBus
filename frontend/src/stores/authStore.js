@@ -25,7 +25,14 @@ export const useAuthStore = defineStore('auth', {
     isGestor: (state) => state.user?.role === 'administrador' || !!state.user?.is_superuser,
     clienteId: (state) => state.user?.cliente_id || null,
     userNome: (state) => state.user?.pessoa?.nome || state.user?.email || 'Usuário',
-    statusAprovacao: (state) => state.user?.status_aprovacao || null
+    statusAprovacao: (state) => state.user?.status_aprovacao || null,
+    alunoMatricula: (state) => state.user?.aluno?.matricula || null,
+    alunoInstituicao: (state) => state.user?.aluno?.instituicao_nome || null,
+    alunoSigla: (state) => state.user?.aluno?.instituicao_sigla || null,
+    alunoClienteNome: (state) => state.user?.aluno?.cliente_nome || null,
+    isAlunoAprovado: (state) => String(state.user?.status_aprovacao || '').toUpperCase() === 'APROVADO',
+    isAlunoPendente: (state) => String(state.user?.status_aprovacao || '').toUpperCase() === 'PENDENTE',
+    isAlunoRejeitado: (state) => String(state.user?.status_aprovacao || '').toUpperCase() === 'REJEITADO',
   },
 
   actions: {

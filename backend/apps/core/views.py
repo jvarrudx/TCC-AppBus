@@ -38,6 +38,7 @@ from apps.core.models import (
     Viagem,
     PrevisaoViagem,
     Embarque,
+    Registro_Consentimento,
     TipoStatusAprovacao,
     SentidoViagem,
     StatusViagem,
@@ -271,6 +272,87 @@ class AnonimizacaoContaView(APIView):
         )
 
 
+class PerfilUsuarioView(APIView):
+    """
+    Exibição transparente dos dados cadastrais do titular (LGPD Art. 18, II).
+    Rota: /api/auth/perfil/ (GET)
+    """
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        if not hasattr(user, 'pessoa'):
+            return Response(
+                {"erro": "Usuário não possui perfil civil vinculado."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        pessoa = user.pessoa
+        cpf_mascarado = None
+        if pessoa.cpf:
+            cpf_digitos = ''.join(filter(str.isdigit, pessoa.cpf))
+            if len(cpf_digitos) == 11:
+                cpf_mascarado = f"***.{cpf_digitos[3:6]}.{cpf_digitos[6:9]}-**"
+            else:
+                cpf_mascarado = "***.***.***-**"
+
+        aluno_data = None
+        if hasattr(pessoa, 'aluno'):
+            aluno = pessoa.aluno
+            consentimento = Registro_Consentimento.objects.filter(pessoa=pessoa).order_by('-data_consentimento').first()
+            aluno_data = {
+                "id": aluno.id,
+                "matricula": aluno.matricula,
+                "status_aprovacao": aluno.status_aprovacao,
+                "status_aprovacao_display": aluno.get_status_aprovacao_display(),
+                "instituicao_id": aluno.instituicao_id,
+                "instituicao_nome": aluno.instituicao.nome if aluno.instituicao else None,
+                "instituicao_sigla": aluno.instituicao.sigla if aluno.instituicao else None,
+                "cliente_id": aluno.cliente_id,
+                "cliente_nome": aluno.cliente.nome_fantasia or aluno.cliente.razao_social if aluno.cliente else None,
+                "consentimento": {
+                    "documento_versao": consentimento.documento.versao if consentimento and consentimento.documento else "1.0",
+                    "data_consentimento": consentimento.data_consentimento if consentimento else None,
+                    "ip_origem": consentimento.ip_origem if consentimento else None,
+                } if consentimento else None
+            }
+
+        motorista_data = None
+        if hasattr(pessoa, 'motorista'):
+            motorista = pessoa.motorista
+            motorista_data = {
+                "id": motorista.id,
+                "cnh": f"***{motorista.cnh[-4:]}" if motorista.cnh else None,
+                "categoria_cnh": motorista.categoria_cnh,
+                "cliente_nome": motorista.cliente.nome_fantasia or motorista.cliente.razao_social if motorista.cliente else None
+            }
+
+        endereco_data = None
+        if pessoa.endereco:
+            endereco_data = {
+                "logradouro": pessoa.endereco.logradouro,
+                "numero": pessoa.endereco.numero,
+                "complemento": pessoa.endereco.complemento,
+                "cep": pessoa.endereco.cep,
+                "bairro": pessoa.endereco.bairro.nome if pessoa.endereco.bairro else None,
+                "cidade": pessoa.endereco.bairro.cidade.nome if pessoa.endereco.bairro and pessoa.endereco.bairro.cidade else None,
+            }
+
+        return Response({
+            "id": user.id,
+            "email": user.email,
+            "nome": pessoa.nome,
+            "cpf_mascarado": cpf_mascarado,
+            "data_nascimento": pessoa.data_nascimento,
+            "data_cadastro": pessoa.data_cadastro,
+            "anonimizado": pessoa.anonimizado,
+            "endereco": endereco_data,
+            "aluno": aluno_data,
+            "motorista": motorista_data
+        }, status=status.HTTP_200_OK)
+
+
+
 
 # ==============================================================================
 # 5. VIEWSETS CORE COM ISOLAMENTO MULTI-TENANT & GESTÃO (Etapas 2.2 e 2.3)
@@ -495,17 +577,24 @@ class PredicaoDemandaView(APIView):
         else:
             data_alvo = date.today()
 
-        previsao = PrevisaoViagem.objects.filter(aluno=aluno, data=data_alvo, ativo=True).first()
+        total_ida = PrevisaoViagem.objects.filter(data=data_alvo, aluno__cliente=aluno.cliente, vai_ida=True, ativo=True).count()
+        total_volta = PrevisaoViagem.objects.filter(data=data_alvo, aluno__cliente=aluno.cliente, vai_volta=True, ativo=True).count()
+
         if not previsao:
             return Response({
                 "aluno_id": aluno.id,
                 "data": data_alvo,
                 "vai_ida": False,
                 "vai_volta": False,
-                "registrado": False
+                "registrado": False,
+                "total_colegas_ida": total_ida,
+                "total_colegas_volta": total_volta
             }, status=status.HTTP_200_OK)
 
-        return Response(PrevisaoViagemSerializer(previsao).data, status=status.HTTP_200_OK)
+        resp_data = dict(PrevisaoViagemSerializer(previsao).data)
+        resp_data["total_colegas_ida"] = total_ida
+        resp_data["total_colegas_volta"] = total_volta
+        return Response(resp_data, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
         return self._salvar_predicao(request)
@@ -553,8 +642,13 @@ class PredicaoDemandaView(APIView):
             f"vai_ida={vai_ida}, vai_volta={vai_volta}."
         )
 
-        serializer = PrevisaoViagemSerializer(previsao)
-        return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        total_ida = PrevisaoViagem.objects.filter(data=data_obj, aluno__cliente=aluno.cliente, vai_ida=True, ativo=True).count()
+        total_volta = PrevisaoViagem.objects.filter(data=data_obj, aluno__cliente=aluno.cliente, vai_volta=True, ativo=True).count()
+
+        resp_data = dict(PrevisaoViagemSerializer(previsao).data)
+        resp_data["total_colegas_ida"] = total_ida
+        resp_data["total_colegas_volta"] = total_volta
+        return Response(resp_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class IniciarViagemView(APIView):
@@ -890,11 +984,11 @@ class DashboardViagemView(APIView):
 
 class ViagemAtivaView(APIView):
     """
-    Recuperação do estado da viagem ativa para o motorista autenticado ou gestor.
+    Recuperação do estado da viagem ativa para o motorista, aluno ou gestor.
     Rota: /api/operacao/viagem/ativa/ (GET)
-    Permite restaurar o painel em caso de refresh, queda de sinal ou recarregamento do PWA.
+    Permite consultar a viagem em andamento no município com isolamento multi-tenant.
     """
-    permission_classes = [IsMotoristaOuAdmin]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request, *args, **kwargs):
         user = request.user

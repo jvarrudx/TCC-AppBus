@@ -45,6 +45,18 @@ const routes = [
         name: 'driver-panel',
         component: () => import('../pages/driver/DriverPanelPage.vue'),
         meta: { title: 'Painel do Motorista | AppBus' }
+      },
+      {
+        path: 'aluno/qrcode',
+        name: 'aluno-qrcode',
+        component: () => import('../pages/student/StudentQRScannerPage.vue'),
+        meta: { title: 'Embarque Óptico | AppBus' }
+      },
+      {
+        path: 'aluno/perfil',
+        name: 'aluno-perfil',
+        component: () => import('../pages/student/StudentProfilePage.vue'),
+        meta: { title: 'Perfil & Privacidade | AppBus' }
       }
     ]
   },

@@ -131,58 +131,8 @@
       </q-card>
     </div>
 
-    <!-- Card Operacional: Aluno (Predição de Demanda) -->
-    <q-card v-if="authStore.isAluno" class="dark-card q-pa-md q-mb-md">
-      <div class="row items-center justify-between q-mb-sm">
-        <div class="text-subtitle1 text-weight-bold text-primary flex items-center">
-          <q-icon name="today" size="20px" class="q-mr-xs" />
-          Previsão de Viagem de Hoje
-        </div>
-        <q-badge color="grey-8" text-color="grey-4">{{ todayFormatted }}</q-badge>
-      </div>
-      <p class="text-caption text-grey-4">
-        Informe se você utilizará o transporte hoje para otimização da rota e dimensionamento da frota.
-      </p>
-
-      <div class="row q-col-gutter-sm q-mt-xs">
-        <div class="col-6">
-          <q-btn
-            :outline="!vaiIda"
-            :color="vaiIda ? 'primary' : 'grey-7'"
-            :text-color="vaiIda ? 'dark' : 'white'"
-            class="full-width q-py-sm"
-            @click="toggleIda"
-          >
-            <q-icon name="arrow_forward" size="16px" class="q-mr-xs" />
-            <span>Ida: {{ vaiIda ? 'SIM' : 'NÃO' }}</span>
-          </q-btn>
-        </div>
-        <div class="col-6">
-          <q-btn
-            :outline="!vaiVolta"
-            :color="vaiVolta ? 'primary' : 'grey-7'"
-            :text-color="vaiVolta ? 'dark' : 'white'"
-            class="full-width q-py-sm"
-            @click="toggleVolta"
-          >
-            <q-icon name="arrow_back" size="16px" class="q-mr-xs" />
-            <span>Volta: {{ vaiVolta ? 'SIM' : 'NÃO' }}</span>
-          </q-btn>
-        </div>
-      </div>
-
-      <q-btn
-        color="primary"
-        text-color="dark"
-        class="full-width btn-bus-primary q-mt-md"
-        size="md"
-        :loading="savingPrevisao"
-        @click="salvarPrevisao"
-      >
-        <q-icon name="cloud_upload" size="18px" class="q-mr-xs" />
-        Confirmar Minha Demanda
-      </q-btn>
-    </q-card>
+    <!-- Módulo Operacional do Aluno (Carteirinha Digital, Viagem do Dia e Predição Automática) -->
+    <StudentHomeSection v-if="authStore.isAluno" class="q-mb-md" />
 
     <!-- Card Operacional: Motorista (Controle de Viagem) -->
     <q-card v-if="authStore.isMotorista" class="dark-card q-pa-md q-mb-md">
@@ -257,13 +207,11 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '../stores/authStore'
 import api from '../boot/axios'
+import StudentHomeSection from '../components/StudentHomeSection.vue'
 
 const $q = useQuasar()
 const authStore = useAuthStore()
 
-const vaiIda = ref(true)
-const vaiVolta = ref(true)
-const savingPrevisao = ref(false)
 const backendOk = ref(false)
 const dbOk = ref(false)
 
@@ -293,38 +241,6 @@ const roleBadgeColor = computed(() => {
   return 'accent'
 })
 
-const toggleIda = () => {
-  vaiIda.value = !vaiIda.value
-}
-
-const toggleVolta = () => {
-  vaiVolta.value = !vaiVolta.value
-}
-
-const salvarPrevisao = async () => {
-  savingPrevisao.value = true
-  const todayIso = new Date().toISOString().split('T')[0]
-  try {
-    await api.post('/operacao/predicao/', {
-      data: todayIso,
-      vai_ida: vaiIda.value,
-      vai_volta: vaiVolta.value
-    })
-    $q.notify({
-      type: 'positive',
-      icon: 'check',
-      message: 'Demanda confirmada com sucesso!'
-    })
-  } catch (error) {
-    $q.notify({
-      type: 'negative',
-      icon: 'warning',
-      message: error.response?.data?.error || 'Erro ao registrar previsão.'
-    })
-  } finally {
-    savingPrevisao.value = false
-  }
-}
 
 const fetchMetricasAdmin = async () => {
   if (!authStore.isGestor) return

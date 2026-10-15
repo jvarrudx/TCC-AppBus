@@ -42,6 +42,13 @@
           <q-btn flat dense no-caps label="Painel Operacional" icon="sports_motorsports" size="sm" to="/motorista" text-color="primary" />
         </div>
 
+        <!-- Atalhos Rápidos para Aluno -->
+        <div v-if="authStore.isAluno" class="row q-gutter-x-xs q-mr-sm">
+          <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
+          <q-btn flat dense no-caps label="Embarcar" icon="qr_code_scanner" size="sm" to="/aluno/qrcode" text-color="primary" />
+          <q-btn flat dense no-caps label="Perfil" icon="manage_accounts" size="sm" to="/aluno/perfil" />
+        </div>
+
         <!-- Informações do Usuário e Papel Ativo -->
         <div class="row items-center q-gutter-x-sm">
           <div class="column text-right gt-xs">
