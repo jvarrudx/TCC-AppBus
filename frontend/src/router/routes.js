@@ -21,6 +21,30 @@ const routes = [
         name: 'home',
         component: () => import('../pages/HomePage.vue'),
         meta: { title: 'Início | AppBus' }
+      },
+      {
+        path: 'admin/aprovacoes',
+        name: 'admin-aprovacoes',
+        component: () => import('../pages/admin/AdminApprovalQueuePage.vue'),
+        meta: { title: 'Fila de Aprovação | AppBus' }
+      },
+      {
+        path: 'admin/frota',
+        name: 'admin-frota',
+        component: () => import('../pages/admin/AdminFleetPage.vue'),
+        meta: { title: 'Gestão de Frota e Rotas | AppBus' }
+      },
+      {
+        path: 'admin/qrcode',
+        name: 'admin-qrcode',
+        component: () => import('../pages/admin/AdminQRCodePage.vue'),
+        meta: { title: 'Emissão de QR Code | AppBus' }
+      },
+      {
+        path: 'motorista',
+        name: 'driver-panel',
+        component: () => import('../pages/driver/DriverPanelPage.vue'),
+        meta: { title: 'Painel do Motorista | AppBus' }
       }
     ]
   },

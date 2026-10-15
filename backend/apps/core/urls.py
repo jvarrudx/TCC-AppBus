@@ -23,6 +23,8 @@ from apps.core.views import (
     EmbarqueQRCodeView,
     EmbarqueManualView,
     DashboardViagemView,
+    ViagemAtivaView,
+    BuscaAlunoEmbarqueView,
 )
 
 # Router para endpoints RESTful Multi-Tenant
@@ -49,10 +51,12 @@ urlpatterns = [
     # Fluxos Operacionais Core (Etapa 2.5 - Predição, Viagem, Embarque e Dashboard)
     path('operacao/predicao/', PredicaoDemandaView.as_view(), name='operacao_predicao'),
     path('operacao/viagem/iniciar/', IniciarViagemView.as_view(), name='operacao_viagem_iniciar'),
+    path('operacao/viagem/ativa/', ViagemAtivaView.as_view(), name='operacao_viagem_ativa'),
     path('operacao/viagem/<int:pk>/concluir/', ConcluirViagemView.as_view(), name='operacao_viagem_concluir'),
     path('operacao/viagem/<int:pk>/dashboard/', DashboardViagemView.as_view(), name='operacao_viagem_dashboard'),
     path('operacao/embarque/qrcode/', EmbarqueQRCodeView.as_view(), name='operacao_embarque_qrcode'),
     path('operacao/embarque/manual/', EmbarqueManualView.as_view(), name='operacao_embarque_manual'),
+    path('operacao/alunos/busca/', BuscaAlunoEmbarqueView.as_view(), name='operacao_alunos_busca'),
 
     # Endpoints de Gestão com Isolamento Multi-Tenant (Etapa 2.2)
     path('', include(router.urls)),

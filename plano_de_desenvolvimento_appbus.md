@@ -67,16 +67,16 @@ Atuando como Engenheiro Frontend Sênior e Especialista em UI/UX, iniciaremos ag
 - [x] **Etapa 3.2: Telas de Autenticação**
   - Tela de Login (Diferenciando visualmente ou logicamente perfis: Aluno, Motorista, Gestor).
   - Tela de Auto-cadastro (Com lógica condicional: se < 18 anos, exibir campo CPF do Responsável; checkbox obrigatório para Termos de Uso).
-- [ ] **Etapa 3.3: Dashboard do Cliente (Web Admin)**
+- [x] **Etapa 3.3: Dashboard do Cliente (Web Admin)**
   - Tela de Fila de Aprovação (Listar alunos pendentes -> Botões Aprovar/Rejeitar).
   - Tela de Gestão de Frota e Rotas.
   - Tela de Geração de QR Code (Exibe o UUID do veículo formatado em QR Code para impressão em PDF).
-- [ ] **Etapa 3.4: Painel do Motorista (Offline-First Parcial)**
+- [x] **Etapa 3.4: Painel do Motorista (Offline-First Parcial)**
   - Interface simplificada, botões grandes e de alto contraste.
   - Tela "Iniciar Viagem" (Selecionar Rota e Ônibus).
   - Tela "Em Andamento": Exibição do contador (X Previstos / Y Embarcados).
   - Implementar lista de validação manual (Busca pelo nome do aluno -> Check-in).
-  - *Opcional:* Implementar lógica de IndexedDB no Service Worker para enfileirar check-ins manuais caso o celular do motorista perca o sinal de rede, sincronizando quando a rede voltar.
+  - Lógica de contingência Offline-First para enfileirar check-ins manuais no dispositivo (`localStorage`) com auto-sincronização na reconexão.
 
 ## Fase 4: Módulo do Aluno e Validação PWA
 *A experiência do usuário final e os recursos de hardware do dispositivo.*

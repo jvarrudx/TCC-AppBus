@@ -158,21 +158,6 @@ const showPassword = ref(false)
 const loading = ref(false)
 const errorMessage = ref('')
 
-onMounted(() => {
-  if (route.query.email) {
-    email.value = String(route.query.email)
-  }
-  if (route.query.registered === 'true') {
-    $q.notify({
-      type: 'positive',
-      icon: 'how_to_reg',
-      message: 'Cadastro efetuado com sucesso!',
-      caption: 'Insira sua senha cadastrada para entrar.',
-      timeout: 6000
-    })
-  }
-})
-
 const profiles = [
   {
     role: 'aluno',
@@ -206,10 +191,38 @@ const currentProfile = computed(() => {
   return profiles.find(p => p.role === selectedProfile.value) || profiles[0]
 })
 
+const demoCredentials = {
+  aluno: { email: 'lucas.estudante@appbus.com', password: 'aluno123' },
+  motorista: { email: 'motorista@appbus.com', password: 'motorista123' },
+  administrador: { email: 'gestor@appbus.com', password: 'gestor123' }
+}
+
 const selectProfile = (profile) => {
   selectedProfile.value = profile.role
   errorMessage.value = ''
+  if (demoCredentials[profile.role]) {
+    email.value = demoCredentials[profile.role].email
+    password.value = demoCredentials[profile.role].password
+  }
 }
+
+onMounted(() => {
+  if (route.query.email) {
+    email.value = String(route.query.email)
+  } else if (demoCredentials[selectedProfile.value]) {
+    email.value = demoCredentials[selectedProfile.value].email
+    password.value = demoCredentials[selectedProfile.value].password
+  }
+  if (route.query.registered === 'true') {
+    $q.notify({
+      type: 'positive',
+      icon: 'how_to_reg',
+      message: 'Cadastro efetuado com sucesso!',
+      caption: 'Insira sua senha cadastrada para entrar.',
+      timeout: 6000
+    })
+  }
+})
 
 const handleLogin = async () => {
   errorMessage.value = ''

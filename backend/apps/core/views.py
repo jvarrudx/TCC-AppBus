@@ -17,6 +17,7 @@ Architectural Guidelines (agent.md):
 import logging
 from datetime import date
 from django.db import transaction, connection
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, viewsets, status, filters
 from rest_framework.views import APIView
@@ -818,6 +819,48 @@ class EmbarqueManualView(APIView):
         return Response(EmbarqueResponseSerializer(embarque).data, status=status.HTTP_201_CREATED)
 
 
+def build_dashboard_viagem_data(viagem):
+    """
+    Função utilitária para consolidação de métricas operacionais da viagem
+    com agregações diretas via COUNT() no PostgreSQL (agent.md 2.5).
+    """
+    total_embarcados = viagem.embarques.filter(ativo=True).count()
+
+    predicoes_qs = PrevisaoViagem.objects.filter(
+        data=viagem.data,
+        aluno__cliente=viagem.rota.cliente,
+        ativo=True
+    )
+    if viagem.sentido == SentidoViagem.IDA:
+        total_previstos = predicoes_qs.filter(vai_ida=True).count()
+    else:
+        total_previstos = predicoes_qs.filter(vai_volta=True).count()
+
+    capacidade = viagem.onibus.capacidade
+    vagas_restantes = max(0, capacidade - total_embarcados)
+    ocupacao = round((total_embarcados / capacidade) * 100, 1) if capacidade > 0 else 0.0
+
+    return {
+        "viagem_id": viagem.id,
+        "rota_nome": viagem.rota.nome,
+        "rota_id": viagem.rota.id,
+        "onibus_placa": viagem.onibus.placa,
+        "onibus_id": viagem.onibus.id,
+        "motorista_nome": viagem.motorista.pessoa.nome if viagem.motorista else "Não atribuído",
+        "sentido": viagem.sentido,
+        "sentido_display": viagem.get_sentido_display(),
+        "status": viagem.status,
+        "status_display": viagem.get_status_display(),
+        "data": viagem.data,
+        "hora_inicio": viagem.hora_inicio,
+        "capacidade_onibus": capacidade,
+        "total_previstos": total_previstos,
+        "total_embarcados": total_embarcados,
+        "vagas_restantes": vagas_restantes,
+        "percentual_ocupacao": ocupacao,
+    }
+
+
 class DashboardViagemView(APIView):
     """
     Dashboard em Tempo Real do Motorista (agent.md 2.5 Performance Constraints).
@@ -841,42 +884,104 @@ class DashboardViagemView(APIView):
         if not request.user.is_superuser and user_cliente and user_cliente.id != viagem.rota.cliente_id:
             return Response({"erro": "Acesso negado: Viagem pertencente a outro município."}, status=status.HTTP_403_FORBIDDEN)
 
-        # Agregações diretas no PostgreSQL (agent.md 2.5)
-        total_embarcados = viagem.embarques.filter(ativo=True).count()
-
-        # Contagem de alunos com intenção confirmada para a data e sentido da viagem
-        predicoes_qs = PrevisaoViagem.objects.filter(
-            data=viagem.data,
-            aluno__cliente=viagem.rota.cliente,
-            ativo=True
-        )
-        if viagem.sentido == SentidoViagem.IDA:
-            total_previstos = predicoes_qs.filter(vai_ida=True).count()
-        else:
-            total_previstos = predicoes_qs.filter(vai_volta=True).count()
-
-        capacidade = viagem.onibus.capacidade
-        vagas_restantes = max(0, capacidade - total_embarcados)
-        ocupacao = round((total_embarcados / capacidade) * 100, 1) if capacidade > 0 else 0.0
-
-        dados_dashboard = {
-            "viagem_id": viagem.id,
-            "rota_nome": viagem.rota.nome,
-            "onibus_placa": viagem.onibus.placa,
-            "motorista_nome": viagem.motorista.pessoa.nome if viagem.motorista else "Não atribuído",
-            "sentido": viagem.sentido,
-            "sentido_display": viagem.get_sentido_display(),
-            "status": viagem.status,
-            "status_display": viagem.get_status_display(),
-            "data": viagem.data,
-            "hora_inicio": viagem.hora_inicio,
-            "capacidade_onibus": capacidade,
-            "total_previstos": total_previstos,
-            "total_embarcados": total_embarcados,
-            "vagas_restantes": vagas_restantes,
-            "percentual_ocupacao": ocupacao,
-        }
-
+        dados_dashboard = build_dashboard_viagem_data(viagem)
         return Response(DashboardViagemResponseSerializer(dados_dashboard).data, status=status.HTTP_200_OK)
+
+
+class ViagemAtivaView(APIView):
+    """
+    Recuperação do estado da viagem ativa para o motorista autenticado ou gestor.
+    Rota: /api/operacao/viagem/ativa/ (GET)
+    Permite restaurar o painel em caso de refresh, queda de sinal ou recarregamento do PWA.
+    """
+    permission_classes = [IsMotoristaOuAdmin]
+
+    def get(self, request, *args, **kwargs):
+        user = request.user
+        motorista = None
+        if hasattr(user, 'pessoa') and hasattr(user.pessoa, 'motorista') and user.pessoa.motorista.ativo:
+            motorista = user.pessoa.motorista
+
+        user_cliente = get_user_cliente(user)
+
+        qs = Viagem.objects.select_related(
+            'rota__cliente',
+            'onibus',
+            'motorista__pessoa'
+        ).filter(status=StatusViagem.EM_ANDAMENTO, data=date.today())
+
+        if motorista:
+            viagem = qs.filter(motorista=motorista).first()
+        elif user_cliente:
+            viagem = qs.filter(rota__cliente=user_cliente).last()
+        elif user.is_superuser:
+            viagem = qs.last()
+        else:
+            viagem = None
+
+        if not viagem:
+            return Response({"ativa": False, "viagem": None}, status=status.HTTP_200_OK)
+
+        dados_dashboard = build_dashboard_viagem_data(viagem)
+        serialized = DashboardViagemResponseSerializer(dados_dashboard).data
+        return Response({"ativa": True, "viagem": serialized}, status=status.HTTP_200_OK)
+
+
+class BuscaAlunoEmbarqueView(APIView):
+    """
+    Busca rápida de alunos aprovados do mesmo município para validação manual de embarque.
+    Rota: /api/operacao/alunos/busca/?q={termo}&viagem_id={id} (GET)
+    Garante isolamento multi-tenant e formata identificadores mascarados conforme LGPD.
+    """
+    permission_classes = [IsMotoristaOuAdmin]
+
+    def get(self, request, *args, **kwargs):
+        user_cliente = get_user_cliente(request.user)
+        if not user_cliente and not request.user.is_superuser:
+            return Response({"erro": "Usuário não vinculado a um município."}, status=status.HTTP_400_BAD_REQUEST)
+
+        q = request.query_params.get('q', '').strip()
+        viagem_id = request.query_params.get('viagem_id')
+
+        qs = Aluno.objects.select_related('pessoa__usuario', 'instituicao', 'cliente').filter(
+            status_aprovacao=TipoStatusAprovacao.APROVADO,
+            pessoa__anonimizado=False,
+            pessoa__usuario__ativo=True
+        )
+        if user_cliente:
+            qs = qs.filter(cliente=user_cliente)
+
+        if q:
+            qs = qs.filter(
+                Q(pessoa__nome__icontains=q) |
+                Q(matricula__icontains=q) |
+                Q(pessoa__cpf__icontains=q)
+            )
+
+        alunos = qs.order_by('pessoa__nome')[:30]
+
+        embarcados_ids = set()
+        if viagem_id and str(viagem_id).isdigit():
+            embarcados_ids = set(
+                Embarque.objects.filter(viagem_id=int(viagem_id), ativo=True).values_list('aluno_id', flat=True)
+            )
+
+        resultados = []
+        for a in alunos:
+            cpf_raw = ''.join(c for c in (a.pessoa.cpf or '') if c.isdigit())
+            cpf_mascarado = f"***.{cpf_raw[3:6]}.***-{cpf_raw[-2:]}" if len(cpf_raw) == 11 else (a.pessoa.cpf or "")
+            resultados.append({
+                "id": a.id,
+                "nome": a.pessoa.nome,
+                "cpf_mascarado": cpf_mascarado,
+                "matricula": a.matricula,
+                "instituicao_nome": a.instituicao.nome if a.instituicao else "Não informada",
+                "instituicao_sigla": a.instituicao.sigla if a.instituicao else "",
+                "foto_url": None,
+                "ja_embarcou": a.id in embarcados_ids
+            })
+
+        return Response(resultados, status=status.HTTP_200_OK)
+
 
 

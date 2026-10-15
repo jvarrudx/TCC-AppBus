@@ -1143,3 +1143,51 @@ class OperacaoCoreAPITestCase(APITestCase):
         resp_embarque = self.client.post('/api/operacao/embarque/qrcode/', payload, format='json')
         self.assertEqual(resp_embarque.status_code, status.HTTP_400_BAD_REQUEST)
 
+    def test_viagem_ativa_recuperacao_estado(self):
+        """Valida restauração do estado da viagem ativa do motorista (Etapa 3.4)."""
+        self.client.force_authenticate(user=self.user_motorista)
+
+        # Sem viagem ativa
+        resp = self.client.get('/api/operacao/viagem/ativa/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(resp.data['ativa'])
+        self.assertIsNone(resp.data['viagem'])
+
+        # Cria viagem em andamento
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+
+        resp = self.client.get('/api/operacao/viagem/ativa/')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertTrue(resp.data['ativa'])
+        self.assertEqual(resp.data['viagem']['viagem_id'], viagem.id)
+        self.assertEqual(resp.data['viagem']['onibus_placa'], self.onibus.placa)
+
+    def test_busca_aluno_embarque_motorista(self):
+        """Valida endpoint de busca rápida de alunos para check-in manual com mascaramento LGPD."""
+        self.client.force_authenticate(user=self.user_motorista)
+
+        # Busca pelo nome parcial do aluno
+        resp = self.client.get(f'/api/operacao/alunos/busca/?q={self.aluno.pessoa.nome[:4]}')
+        self.assertEqual(resp.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(resp.data), 1)
+
+        primeiro = resp.data[0]
+        self.assertEqual(primeiro['id'], self.aluno.id)
+        self.assertEqual(primeiro['nome'], self.aluno.pessoa.nome)
+        # CPF deve vir mascarado
+        self.assertTrue(primeiro['cpf_mascarado'].startswith('***.'))
+
+        # Aluno não pode acessar endpoint restrito a motoristas/admins
+        self.client.force_authenticate(user=self.user_aluno)
+        resp_aluno = self.client.get('/api/operacao/alunos/busca/?q=teste')
+        self.assertEqual(resp_aluno.status_code, status.HTTP_403_FORBIDDEN)
+
+
