@@ -547,9 +547,110 @@ class AlunoViewSet(TenantBaseViewSet):
         )
 
 
-# ==============================================================================
-# 7. FLUXOS OPERACIONAIS CORE (Etapa 2.5 - agent.md 2.4, 2.5)
-# ==============================================================================
+def calcular_status_prioridade_volta(aluno, data_alvo, vai_ida, vai_volta):
+    """
+    Implementa a Regra de Negócio 'Modelo A' (Prioridade de Ida e Fila de Espera para a Volta):
+    1. Quem foi na IDA (marcou vai_ida=True ou possui embarque em viagem de ida hoje)
+       possui vaga GARANTIDA na VOLTA.
+    2. Quem vai APENAS na volta disputa as vagas remanescentes (Capacidade - Alunos da Ida).
+    3. Se as vagas remanescentes se esgotarem, entra na FILA DE ESPERA (com posição ordinal).
+    4. Se algum aluno da ida desmarcar a volta, a vaga é automaticamente liberada para a fila de espera.
+    """
+    viagem_ativa = Viagem.objects.filter(
+        rota__cliente=aluno.cliente,
+        data=data_alvo,
+        status__in=[StatusViagem.EM_ANDAMENTO, StatusViagem.AGENDADA]
+    ).first()
+    
+    if viagem_ativa and viagem_ativa.onibus:
+        capacidade_veiculo = viagem_ativa.onibus.capacidade
+    else:
+        onibus_cliente = Onibus.objects.filter(cliente=aluno.cliente, ativo=True).order_by('-capacidade').first()
+        capacidade_veiculo = onibus_cliente.capacidade if onibus_cliente else 44
+
+    if not vai_volta:
+        return {
+            "status_volta": "DISPENSADO",
+            "status_volta_display": "Não voltará no ônibus hoje",
+            "posicao_fila": None,
+            "vagas_remanescentes": None,
+            "capacidade_onibus": capacidade_veiculo,
+            "mensagem_prioridade": "Você optou por não utilizar o transporte na volta hoje."
+        }
+
+    # 2. Verifica se o aluno utilizou/confirmou a ida hoje
+    tem_embarque_ida = Embarque.objects.filter(
+        aluno=aluno,
+        viagem__data=data_alvo,
+        viagem__sentido=SentidoViagem.IDA,
+        ativo=True
+    ).exists()
+    
+    foi_na_ida = bool(vai_ida or tem_embarque_ida)
+
+    # 3. Alunos prioritários (foram na ida e querem voltar hoje)
+    prioritarios_volta_count = PrevisaoViagem.objects.filter(
+        data=data_alvo,
+        aluno__cliente=aluno.cliente,
+        vai_ida=True,
+        vai_volta=True,
+        ativo=True
+    ).exclude(aluno=aluno).count()
+
+    if foi_na_ida:
+        prioritarios_volta_count += 1
+        vagas_remanescentes = max(0, capacidade_veiculo - prioritarios_volta_count)
+        return {
+            "status_volta": "GARANTIDA",
+            "status_volta_display": "Prioridade de Ciclo Garantida",
+            "posicao_fila": None,
+            "vagas_remanescentes": vagas_remanescentes,
+            "capacidade_onibus": capacidade_veiculo,
+            "mensagem_prioridade": "Sua vaga na volta está GARANTIDA pelo critério de prioridade (você utilizou o transporte de ida)."
+        }
+
+    # 4. Aluno NÃO foi na ida, mas quer a volta:
+    vagas_remanescentes = max(0, capacidade_veiculo - prioritarios_volta_count)
+
+    suplentes_qs = PrevisaoViagem.objects.filter(
+        data=data_alvo,
+        aluno__cliente=aluno.cliente,
+        vai_ida=False,
+        vai_volta=True,
+        ativo=True
+    ).order_by('updated_at', 'id')
+
+    posicao_suplente = 1
+    achou = False
+    for p in suplentes_qs:
+        if p.aluno_id == aluno.id:
+            achou = True
+            break
+        posicao_suplente += 1
+
+    if not achou:
+        posicao_suplente = suplentes_qs.count() + 1
+
+    if posicao_suplente <= vagas_remanescentes:
+        return {
+            "status_volta": "CONFIRMADA",
+            "status_volta_display": "Vaga Remanescente Confirmada",
+            "posicao_fila": None,
+            "vagas_remanescentes": max(0, vagas_remanescentes - posicao_suplente),
+            "capacidade_onibus": capacidade_veiculo,
+            "mensagem_prioridade": f"Sua vaga na volta está confirmada! Há {vagas_remanescentes} vagas remanescentes não ocupadas por passageiros da ida."
+        }
+    else:
+        posicao_fila = posicao_suplente - vagas_remanescentes
+        return {
+            "status_volta": "FILA_ESPERA",
+            "status_volta_display": f"Fila de Espera #{posicao_fila}",
+            "posicao_fila": posicao_fila,
+            "vagas_remanescentes": 0,
+            "capacidade_onibus": capacidade_veiculo,
+            "mensagem_prioridade": f"Você está na Posição #{posicao_fila} da Fila de Espera. Alunos que foram na ida têm prioridade. Sua vaga será liberada automaticamente se houver desistências."
+        }
+
 
 class PredicaoDemandaView(APIView):
     """
@@ -582,8 +683,18 @@ class PredicaoDemandaView(APIView):
         total_ida = PrevisaoViagem.objects.filter(data=data_alvo, aluno__cliente=aluno.cliente, vai_ida=True, ativo=True).count()
         total_volta = PrevisaoViagem.objects.filter(data=data_alvo, aluno__cliente=aluno.cliente, vai_volta=True, ativo=True).count()
 
+        vai_ida_atual = previsao.vai_ida if previsao else False
+        vai_volta_atual = previsao.vai_volta if previsao else False
+
+        info_prioridade = calcular_status_prioridade_volta(
+            aluno=aluno,
+            data_alvo=data_alvo,
+            vai_ida=vai_ida_atual,
+            vai_volta=vai_volta_atual
+        )
+
         if not previsao:
-            return Response({
+            resp_data = {
                 "aluno_id": aluno.id,
                 "data": str(data_alvo),
                 "vai_ida": False,
@@ -591,13 +702,16 @@ class PredicaoDemandaView(APIView):
                 "registrado": False,
                 "total_colegas_ida": total_ida,
                 "total_colegas_volta": total_volta
-            }, status=status.HTTP_200_OK)
+            }
+            resp_data.update(info_prioridade)
+            return Response(resp_data, status=status.HTTP_200_OK)
 
         resp_data = dict(PrevisaoViagemSerializer(previsao).data)
         resp_data["data"] = str(data_alvo)
         resp_data["registrado"] = True
         resp_data["total_colegas_ida"] = total_ida
         resp_data["total_colegas_volta"] = total_volta
+        resp_data.update(info_prioridade)
         return Response(resp_data, status=status.HTTP_200_OK)
 
     def post(self, request, *args, **kwargs):
@@ -658,12 +772,20 @@ class PredicaoDemandaView(APIView):
         total_ida = PrevisaoViagem.objects.filter(data=data_obj, aluno__cliente=aluno.cliente, vai_ida=True, ativo=True).count()
         total_volta = PrevisaoViagem.objects.filter(data=data_obj, aluno__cliente=aluno.cliente, vai_volta=True, ativo=True).count()
 
+        info_prioridade = calcular_status_prioridade_volta(
+            aluno=aluno,
+            data_alvo=data_obj,
+            vai_ida=previsao.vai_ida,
+            vai_volta=previsao.vai_volta
+        )
+
         resp_data = dict(PrevisaoViagemSerializer(previsao).data)
         resp_data["data"] = str(data_obj)
         resp_data["registrado"] = True
         resp_data["total_colegas_ida"] = total_ida
         resp_data["total_colegas_volta"] = total_volta
         resp_data["mensagem"] = "Previsão de viagem confirmada com sucesso!"
+        resp_data.update(info_prioridade)
         return Response(resp_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
@@ -839,6 +961,14 @@ class EmbarqueQRCodeView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
 
+        # Trava de lotação máxima: impede ultrapassar a capacidade física permitida do veículo
+        total_embarcados = viagem.embarques.filter(ativo=True).count()
+        if total_embarcados >= onibus.capacidade:
+            return Response(
+                {"erro": f"Capacidade máxima atingida ({total_embarcados}/{onibus.capacidade})! Todos os assentos já foram ocupados."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         embarque = Embarque.objects.create(
             viagem=viagem,
             aluno=aluno,
@@ -910,6 +1040,14 @@ class EmbarqueManualView(APIView):
         if Embarque.objects.filter(viagem=viagem, aluno=aluno).exists():
             return Response(
                 {"erro": f"O aluno {aluno.pessoa.nome} já possui embarque registrado nesta viagem."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Trava de lotação máxima
+        total_embarcados = viagem.embarques.filter(ativo=True).count()
+        if total_embarcados >= viagem.onibus.capacidade:
+            return Response(
+                {"erro": f"Capacidade máxima atingida ({total_embarcados}/{viagem.onibus.capacidade})! Todos os assentos já foram ocupados."},
                 status=status.HTTP_400_BAD_REQUEST
             )
 

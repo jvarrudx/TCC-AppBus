@@ -218,10 +218,61 @@
                 {{ vaiVolta ? 'VOLTO NO ÔNIBUS' : 'NÃO VOLTAREI' }}
               </span>
               <span class="text-caption" style="font-size: 0.65rem;">
-                {{ vaiVolta ? 'Volta Confirmada' : 'Dispensado' }} (Campus ➔ Bairro)
+                {{ vaiVolta ? (statusVolta === 'FILA_ESPERA' ? 'Fila de Espera' : 'Volta Confirmada') : 'Dispensado' }} (Campus ➔ Bairro)
               </span>
             </div>
           </q-btn>
+        </div>
+      </div>
+
+      <!-- 3.1 STATUS DA VOLTA (REGRA DE PRIORIDADE DE CICLO & FILA DE ESPERA) -->
+      <div v-if="vaiVolta" class="q-mt-sm">
+        <!-- FILA DE ESPERA -->
+        <div v-if="statusVolta === 'FILA_ESPERA'" class="waiting-list-box q-pa-sm rounded-borders">
+          <div class="row items-center justify-between q-mb-xs">
+            <div class="row items-center">
+              <q-icon name="hourglass_top" color="warning" size="20px" class="q-mr-xs animate-pulse" />
+              <strong class="text-warning text-caption text-weight-bold">Fila de Espera para a Volta</strong>
+            </div>
+            <q-badge color="warning" text-color="dark" class="text-weight-bolder">
+              POSIÇÃO #{{ posicaoFila || 1 }}
+            </q-badge>
+          </div>
+          <div class="text-caption text-grey-3" style="font-size: 0.74rem;">
+            {{ mensagemPrioridade }}
+          </div>
+        </div>
+
+        <!-- VAGA GARANTIDA POR IDA -->
+        <div v-else-if="statusVolta === 'GARANTIDA'" class="priority-guaranteed-box q-pa-sm rounded-borders">
+          <div class="row items-center justify-between q-mb-xs">
+            <div class="row items-center">
+              <q-icon name="verified" color="positive" size="18px" class="q-mr-xs" />
+              <strong class="text-positive text-caption text-weight-bold">Prioridade de Ciclo Garantida</strong>
+            </div>
+            <q-badge color="positive" text-color="white" class="text-weight-bold">
+              ASSENTO ASSEGURADO
+            </q-badge>
+          </div>
+          <div class="text-caption text-grey-4" style="font-size: 0.72rem;">
+            {{ mensagemPrioridade }}
+          </div>
+        </div>
+
+        <!-- VAGA REMANESCENTE CONFIRMADA -->
+        <div v-else-if="statusVolta === 'CONFIRMADA'" class="remanescent-box q-pa-sm rounded-borders">
+          <div class="row items-center justify-between q-mb-xs">
+            <div class="row items-center">
+              <q-icon name="airline_seat_recline_normal" color="primary" size="18px" class="q-mr-xs" />
+              <strong class="text-primary text-caption text-weight-bold">Vaga Remanescente Confirmada</strong>
+            </div>
+            <q-badge color="primary" text-color="dark" class="text-weight-bold">
+              VAGA DISPONÍVEL
+            </q-badge>
+          </div>
+          <div class="text-caption text-grey-4" style="font-size: 0.72rem;">
+            {{ mensagemPrioridade }}
+          </div>
         </div>
       </div>
 
@@ -293,6 +344,14 @@ const savingPredicao = ref(false)
 const ultimoToggled = ref(null)
 const totalColegasIda = ref(0)
 const totalColegasVolta = ref(0)
+
+// Estados de Prioridade e Fila de Espera (Modelo A)
+const statusVolta = ref('GARANTIDA')
+const statusVoltaDisplay = ref('')
+const posicaoFila = ref(null)
+const vagasRemanescentes = ref(null)
+const capacidadeOnibus = ref(null)
+const mensagemPrioridade = ref('')
 
 // Estados da Viagem Ativa do Município
 const viagemAtiva = ref(null)
@@ -387,6 +446,12 @@ const fetchPredicaoHoje = async () => {
     }
     totalColegasIda.value = data.total_colegas_ida || 0
     totalColegasVolta.value = data.total_colegas_volta || 0
+    statusVolta.value = data.status_volta || 'GARANTIDA'
+    statusVoltaDisplay.value = data.status_volta_display || ''
+    posicaoFila.value = data.posicao_fila
+    vagasRemanescentes.value = data.vagas_remanescentes
+    capacidadeOnibus.value = data.capacidade_onibus
+    mensagemPrioridade.value = data.mensagem_prioridade || ''
   } catch (error) {
     console.error('Falha ao obter previsão do dia:', error)
     $q.notify({
@@ -462,19 +527,35 @@ const toggleAndSave = async (tipo) => {
       temRegistro.value = true
       totalColegasIda.value = response.data.total_colegas_ida ?? totalColegasIda.value
       totalColegasVolta.value = response.data.total_colegas_volta ?? totalColegasVolta.value
+      statusVolta.value = response.data.status_volta ?? statusVolta.value
+      statusVoltaDisplay.value = response.data.status_volta_display ?? statusVoltaDisplay.value
+      posicaoFila.value = response.data.posicao_fila
+      vagasRemanescentes.value = response.data.vagas_remanescentes
+      capacidadeOnibus.value = response.data.capacidade_onibus
+      mensagemPrioridade.value = response.data.mensagem_prioridade ?? mensagemPrioridade.value
     }
 
-    const mensagemNotificacao = tipo === 'ida'
-      ? (vaiIda.value ? 'Ida confirmada! Sua presença foi reservada (Bairro ➔ Campus).' : 'Ida cancelada. Vaga liberada no trajeto de ida.')
-      : (vaiVolta.value ? 'Volta confirmada! Sua presença foi reservada (Campus ➔ Bairro).' : 'Volta cancelada. Vaga liberada no trajeto de volta.')
+    if (tipo === 'volta' && vaiVolta.value && response.data?.status_volta === 'FILA_ESPERA') {
+      $q.notify({
+        type: 'warning',
+        icon: 'hourglass_top',
+        message: `Atenção: Ônibus lotado na ida! Você entrou na FILA DE ESPERA (Posição #${response.data.posicao_fila || 1}). Depende de desistências.`,
+        timeout: 4500,
+        position: 'bottom'
+      })
+    } else {
+      const mensagemNotificacao = tipo === 'ida'
+        ? (vaiIda.value ? 'Ida confirmada! Sua presença foi reservada (Bairro ➔ Campus).' : 'Ida cancelada. Vaga liberada no trajeto de ida.')
+        : (vaiVolta.value ? 'Volta confirmada! Sua presença foi reservada (Campus ➔ Bairro).' : 'Volta cancelada. Vaga liberada no trajeto de volta.')
 
-    $q.notify({
-      type: 'positive',
-      icon: 'cloud_done',
-      message: mensagemNotificacao,
-      timeout: 2000,
-      position: 'bottom'
-    })
+      $q.notify({
+        type: 'positive',
+        icon: 'cloud_done',
+        message: mensagemNotificacao,
+        timeout: 2500,
+        position: 'bottom'
+      })
+    }
   } catch (error) {
     // Em caso de erro, reverte
     if (tipo === 'ida') vaiIda.value = !vaiIda.value
@@ -537,6 +618,21 @@ onMounted(async () => {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 10px;
+}
+
+.waiting-list-box {
+  background: rgba(242, 192, 55, 0.12);
+  border: 1px solid rgba(242, 192, 55, 0.45);
+}
+
+.priority-guaranteed-box {
+  background: rgba(33, 186, 69, 0.12);
+  border: 1px solid rgba(33, 186, 69, 0.4);
+}
+
+.remanescent-box {
+  background: rgba(24, 144, 255, 0.12);
+  border: 1px solid rgba(24, 144, 255, 0.4);
 }
 
 .animate-pulse {

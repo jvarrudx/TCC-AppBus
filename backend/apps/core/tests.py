@@ -1190,4 +1190,107 @@ class OperacaoCoreAPITestCase(APITestCase):
         resp_aluno = self.client.get('/api/operacao/alunos/busca/?q=teste')
         self.assertEqual(resp_aluno.status_code, status.HTTP_403_FORBIDDEN)
 
+    def test_modelo_a_prioridade_volta_garantida_para_quem_foi_na_ida(self):
+        """Modelo A: Aluno que declara ida + volta tem vaga garantida na volta."""
+        self.client.force_authenticate(user=self.user_aluno)
+        payload = {"data": str(date.today()), "vai_ida": True, "vai_volta": True}
+
+        response = self.client.post('/api/operacao/predicao/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status_volta'], 'GARANTIDA')
+        self.assertEqual(response.data['status_volta_display'], 'Prioridade de Ciclo Garantida')
+        self.assertIsNone(response.data['posicao_fila'])
+
+    def test_modelo_a_fila_de_espera_quando_capacidade_esgotada(self):
+        """Modelo A: Aluno que só vai na volta entra na fila de espera se o ônibus estiver lotado de prioritários."""
+        # Configura capacidade do ônibus para 1 vaga
+        self.onibus.capacidade = 1
+        self.onibus.save()
+
+        # Aluno 1 ocupa a vaga única via ida
+        PrevisaoViagem.objects.create(
+            aluno=self.aluno,
+            data=date.today(),
+            vai_ida=True,
+            vai_volta=True,
+            ativo=True
+        )
+
+        # Aluno 2 (suplente) quer apenas a volta
+        user_aluno2 = UsuarioAuth.objects.create_user(
+            email="aluno2.suplente@cto.edu.br",
+            password="SenhaAluno2026!"
+        )
+        pessoa_aluno2 = Pessoa.objects.create(
+            usuario=user_aluno2,
+            nome="Carlos Suplente",
+            cpf="999.888.777-66",
+            data_nascimento="2001-05-20"
+        )
+        aluno2 = Aluno.objects.create(
+            pessoa=pessoa_aluno2,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula="MAT-SUPL-02",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+        self.client.force_authenticate(user=user_aluno2)
+        payload = {"data": str(date.today()), "vai_ida": False, "vai_volta": True}
+
+        response = self.client.post('/api/operacao/predicao/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data['status_volta'], 'FILA_ESPERA')
+        self.assertEqual(response.data['posicao_fila'], 1)
+        self.assertIn("Fila de Espera #1", response.data['status_volta_display'])
+
+    def test_bloqueio_embarque_quando_onibus_atinge_capacidade_maxima(self):
+        """Regra de Segurança: Impede novos embarques se o veículo atingir a lotação máxima regulamentar."""
+        self.onibus.capacidade = 1
+        self.onibus.save()
+
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+
+        # Primeiro aluno embarca e lota o ônibus
+        Embarque.objects.create(
+            viagem=viagem,
+            aluno=self.aluno,
+            metodo_validacao=MetodoValidacao.QR_CODE_APP
+        )
+
+        # Segundo aluno tenta embarcar
+        user_aluno2 = UsuarioAuth.objects.create_user(
+            email="aluno2.excedente@cto.edu.br",
+            password="SenhaAluno2026!"
+        )
+        pessoa_aluno2 = Pessoa.objects.create(
+            usuario=user_aluno2,
+            nome="Mariana Excedente",
+            cpf="111.222.333-44",
+            data_nascimento="2001-07-10"
+        )
+        aluno2 = Aluno.objects.create(
+            pessoa=pessoa_aluno2,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula="MAT-EXC-02",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+        self.client.force_authenticate(user=user_aluno2)
+        payload = {"qr_code_uuid": str(self.onibus.qr_code_uuid)}
+        resp = self.client.post('/api/operacao/embarque/qrcode/', payload, format='json')
+
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("capacidade máxima", resp.data['erro'].lower())
+
+
 
