@@ -145,17 +145,33 @@
           </div>
         </div>
 
-        <!-- Indicador de Sincronização Automática -->
-        <div class="row items-center">
-          <q-spinner-dots v-if="savingPredicao" color="primary" size="18px" class="q-mr-xs" />
-          <span class="text-caption text-grey-5 text-weight-medium" style="font-size: 0.70rem;">
-            {{ savingPredicao ? 'Salvando...' : '✓ Sincronizado' }}
+        <!-- Indicador de Sincronização Automática & Botão Recarregar -->
+        <div class="row items-center q-gutter-x-xs">
+          <q-spinner-dots v-if="loadingPredicao || savingPredicao" color="primary" size="18px" />
+          <span
+            class="text-caption text-weight-bold"
+            :class="statusSyncClass"
+            style="font-size: 0.72rem;"
+          >
+            {{ statusSyncLabel }}
           </span>
+          <q-btn
+            flat
+            round
+            dense
+            icon="refresh"
+            color="grey-4"
+            size="sm"
+            :loading="loadingPredicao"
+            @click="fetchPredicaoHoje"
+          >
+            <q-tooltip>Atualizar Intenção e Totais</q-tooltip>
+          </q-btn>
         </div>
       </div>
 
       <p class="text-caption text-grey-4 q-mb-md" style="font-size: 0.78rem;">
-        Selecione abaixo se você utilizará o transporte hoje. O envio é <strong>automático e instantâneo</strong>.
+        Selecione abaixo se você utilizará o transporte hoje. O salvamento é <strong>automático e em tempo real</strong>.
       </p>
 
       <!-- Botões Grandes Táteis de Predição (Toggles com PATCH Automático) -->
@@ -168,16 +184,17 @@
             :outline="!vaiIda"
             class="full-width q-py-md btn-toggle-demand text-weight-bolder"
             no-caps
+            :disable="loadingPredicao"
             :loading="savingPredicao && ultimoToggled === 'ida'"
             @click="toggleAndSave('ida')"
           >
             <div class="column items-center text-center">
-              <q-icon :name="vaiIda ? 'check_circle' : 'cancel'" size="26px" class="q-mb-xs" />
+              <q-icon :name="vaiIda ? 'check_circle' : 'cancel'" size="28px" class="q-mb-xs" :color="vaiIda ? 'dark' : 'grey-5'" />
               <span class="text-subtitle2 leading-tight">
                 {{ vaiIda ? 'VOU NA IDA' : 'NÃO VOU NA IDA' }}
               </span>
               <span class="text-caption" style="font-size: 0.65rem;">
-                Bairro ➔ Campus
+                {{ vaiIda ? 'Ida Confirmada' : 'Dispensado' }} (Bairro ➔ Campus)
               </span>
             </div>
           </q-btn>
@@ -191,16 +208,17 @@
             :outline="!vaiVolta"
             class="full-width q-py-md btn-toggle-demand text-weight-bolder"
             no-caps
+            :disable="loadingPredicao"
             :loading="savingPredicao && ultimoToggled === 'volta'"
             @click="toggleAndSave('volta')"
           >
             <div class="column items-center text-center">
-              <q-icon :name="vaiVolta ? 'check_circle' : 'cancel'" size="26px" class="q-mb-xs" />
+              <q-icon :name="vaiVolta ? 'check_circle' : 'cancel'" size="28px" class="q-mb-xs" :color="vaiVolta ? 'dark' : 'grey-5'" />
               <span class="text-subtitle2 leading-tight">
                 {{ vaiVolta ? 'VOLTO NO ÔNIBUS' : 'NÃO VOLTAREI' }}
               </span>
               <span class="text-caption" style="font-size: 0.65rem;">
-                Campus ➔ Bairro
+                {{ vaiVolta ? 'Volta Confirmada' : 'Dispensado' }} (Campus ➔ Bairro)
               </span>
             </div>
           </q-btn>
@@ -267,8 +285,10 @@ const $q = useQuasar()
 const authStore = useAuthStore()
 
 // Estados da Predição
-const vaiIda = ref(true)
-const vaiVolta = ref(true)
+const vaiIda = ref(false)
+const vaiVolta = ref(false)
+const temRegistro = ref(false)
+const loadingPredicao = ref(false)
 const savingPredicao = ref(false)
 const ultimoToggled = ref(null)
 const totalColegasIda = ref(0)
@@ -277,6 +297,28 @@ const totalColegasVolta = ref(0)
 // Estados da Viagem Ativa do Município
 const viagemAtiva = ref(null)
 const loadingViagem = ref(false)
+
+// Data local no formato YYYY-MM-DD (sem desvio de fuso horário UTC)
+const getTodayIso = () => {
+  const d = new Date()
+  const year = d.getFullYear()
+  const month = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+const statusSyncLabel = computed(() => {
+  if (loadingPredicao.value) return 'Carregando...'
+  if (savingPredicao.value) return 'Salvando...'
+  if (temRegistro.value) return '✓ Sincronizado'
+  return 'Aguardando confirmação'
+})
+
+const statusSyncClass = computed(() => {
+  if (savingPredicao.value || loadingPredicao.value) return 'text-primary'
+  if (temRegistro.value) return 'text-positive'
+  return 'text-grey-5'
+})
 
 // Computeds da Carteirinha Digital
 const matriculaDisplay = computed(() => {
@@ -327,18 +369,34 @@ const formatHora = (dataStr) => {
 
 // Carregar Predição Existente de Hoje
 const fetchPredicaoHoje = async () => {
-  const todayIso = new Date().toISOString().split('T')[0]
+  loadingPredicao.value = true
+  const todayIso = getTodayIso()
   try {
     const response = await api.get('/operacao/predicao/', {
       params: { data: todayIso }
     })
     const data = response.data
-    vaiIda.value = !!data.vai_ida
-    vaiVolta.value = !!data.vai_volta
+    if (data.registrado) {
+      vaiIda.value = Boolean(data.vai_ida)
+      vaiVolta.value = Boolean(data.vai_volta)
+      temRegistro.value = true
+    } else {
+      vaiIda.value = false
+      vaiVolta.value = false
+      temRegistro.value = false
+    }
     totalColegasIda.value = data.total_colegas_ida || 0
     totalColegasVolta.value = data.total_colegas_volta || 0
   } catch (error) {
     console.error('Falha ao obter previsão do dia:', error)
+    $q.notify({
+      type: 'warning',
+      icon: 'sync_problem',
+      message: 'Não foi possível carregar a previsão de hoje. Clique no botão de atualizar.',
+      position: 'bottom'
+    })
+  } finally {
+    loadingPredicao.value = false
   }
 }
 
@@ -373,10 +431,11 @@ const toggleAndSave = async (tipo) => {
   ultimoToggled.value = tipo
 
   // Tátil: Alternar valor imediatamente na UI
+  const novoValor = tipo === 'ida' ? !vaiIda.value : !vaiVolta.value
   if (tipo === 'ida') {
-    vaiIda.value = !vaiIda.value
+    vaiIda.value = novoValor
   } else if (tipo === 'volta') {
-    vaiVolta.value = !vaiVolta.value
+    vaiVolta.value = novoValor
   }
 
   // Feedback háptico se suportado pelo smartphone
@@ -390,7 +449,7 @@ const toggleAndSave = async (tipo) => {
 
   // Disparo automático reativo do PATCH (Etapa 4.1)
   savingPredicao.value = true
-  const todayIso = new Date().toISOString().split('T')[0]
+  const todayIso = getTodayIso()
 
   try {
     const response = await api.patch('/operacao/predicao/', {
@@ -400,17 +459,20 @@ const toggleAndSave = async (tipo) => {
     })
 
     if (response.data) {
-      totalColegasIda.value = response.data.total_colegas_ida || totalColegasIda.value
-      totalColegasVolta.value = response.data.total_colegas_volta || totalColegasVolta.value
+      temRegistro.value = true
+      totalColegasIda.value = response.data.total_colegas_ida ?? totalColegasIda.value
+      totalColegasVolta.value = response.data.total_colegas_volta ?? totalColegasVolta.value
     }
+
+    const mensagemNotificacao = tipo === 'ida'
+      ? (vaiIda.value ? 'Ida confirmada! Sua presença foi reservada (Bairro ➔ Campus).' : 'Ida cancelada. Vaga liberada no trajeto de ida.')
+      : (vaiVolta.value ? 'Volta confirmada! Sua presença foi reservada (Campus ➔ Bairro).' : 'Volta cancelada. Vaga liberada no trajeto de volta.')
 
     $q.notify({
       type: 'positive',
       icon: 'cloud_done',
-      message: tipo === 'ida'
-        ? (vaiIda.value ? 'Ida confirmada!' : 'Ida cancelada.')
-        : (vaiVolta.value ? 'Volta confirmada!' : 'Volta cancelada.'),
-      timeout: 1200,
+      message: mensagemNotificacao,
+      timeout: 2000,
       position: 'bottom'
     })
   } catch (error) {
@@ -421,7 +483,9 @@ const toggleAndSave = async (tipo) => {
     $q.notify({
       type: 'negative',
       icon: 'error',
-      message: error.response?.data?.erro || 'Falha ao salvar previsão de viagem.'
+      message: error.response?.data?.erro || error.response?.data?.data?.[0] || 'Falha ao salvar previsão de viagem.',
+      position: 'bottom',
+      timeout: 3000
     })
   } finally {
     savingPredicao.value = false

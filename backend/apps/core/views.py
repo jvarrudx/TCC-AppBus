@@ -313,7 +313,7 @@ class PerfilUsuarioView(APIView):
                 "consentimento": {
                     "documento_versao": consentimento.documento.versao if consentimento and consentimento.documento else "1.0",
                     "data_consentimento": consentimento.data_consentimento if consentimento else None,
-                    "ip_origem": consentimento.ip_origem if consentimento else None,
+                    "ip_origem": getattr(consentimento, 'ip_address', None) if consentimento else None,
                 } if consentimento else None
             }
 
@@ -571,11 +571,13 @@ class PredicaoDemandaView(APIView):
         data_str = request.query_params.get('data')
         if data_str:
             try:
-                data_alvo = date.fromisoformat(data_str)
+                data_alvo = date.fromisoformat(str(data_str).strip())
             except ValueError:
                 return Response({"erro": "Formato de data inválido. Use AAAA-MM-DD."}, status=status.HTTP_400_BAD_REQUEST)
         else:
-            data_alvo = date.today()
+            data_alvo = timezone.localdate()
+
+        previsao = PrevisaoViagem.objects.filter(aluno=aluno, data=data_alvo, ativo=True).first()
 
         total_ida = PrevisaoViagem.objects.filter(data=data_alvo, aluno__cliente=aluno.cliente, vai_ida=True, ativo=True).count()
         total_volta = PrevisaoViagem.objects.filter(data=data_alvo, aluno__cliente=aluno.cliente, vai_volta=True, ativo=True).count()
@@ -583,7 +585,7 @@ class PredicaoDemandaView(APIView):
         if not previsao:
             return Response({
                 "aluno_id": aluno.id,
-                "data": data_alvo,
+                "data": str(data_alvo),
                 "vai_ida": False,
                 "vai_volta": False,
                 "registrado": False,
@@ -592,6 +594,8 @@ class PredicaoDemandaView(APIView):
             }, status=status.HTTP_200_OK)
 
         resp_data = dict(PrevisaoViagemSerializer(previsao).data)
+        resp_data["data"] = str(data_alvo)
+        resp_data["registrado"] = True
         resp_data["total_colegas_ida"] = total_ida
         resp_data["total_colegas_volta"] = total_volta
         return Response(resp_data, status=status.HTTP_200_OK)
@@ -617,37 +621,49 @@ class PredicaoDemandaView(APIView):
 
         data_val = request.data.get('data')
         if not data_val:
-            return Response({"data": ["O campo data é obrigatório."]}, status=status.HTTP_400_BAD_REQUEST)
+            data_obj = timezone.localdate()
+        else:
+            try:
+                data_obj = date.fromisoformat(str(data_val).strip())
+            except ValueError:
+                return Response({"data": ["Data inválida. Use o formato AAAA-MM-DD."]}, status=status.HTTP_400_BAD_REQUEST)
 
-        try:
-            data_obj = date.fromisoformat(str(data_val))
-        except ValueError:
-            return Response({"data": ["Data inválida. Use o formato AAAA-MM-DD."]}, status=status.HTTP_400_BAD_REQUEST)
+        previsao = PrevisaoViagem.objects.filter(aluno=aluno, data=data_obj).first()
 
-        vai_ida = bool(request.data.get('vai_ida', False))
-        vai_volta = bool(request.data.get('vai_volta', False))
-
-        previsao, created = PrevisaoViagem.objects.update_or_create(
-            aluno=aluno,
-            data=data_obj,
-            defaults={
-                'vai_ida': vai_ida,
-                'vai_volta': vai_volta,
-                'ativo': True
-            }
-        )
+        if previsao:
+            if 'vai_ida' in request.data:
+                previsao.vai_ida = bool(request.data.get('vai_ida'))
+            if 'vai_volta' in request.data:
+                previsao.vai_volta = bool(request.data.get('vai_volta'))
+            previsao.ativo = True
+            previsao.save()
+            created = False
+        else:
+            vai_ida = bool(request.data.get('vai_ida', False))
+            vai_volta = bool(request.data.get('vai_volta', False))
+            previsao = PrevisaoViagem.objects.create(
+                aluno=aluno,
+                data=data_obj,
+                vai_ida=vai_ida,
+                vai_volta=vai_volta,
+                ativo=True
+            )
+            created = True
 
         logger.info(
             f"[Predição de Demanda] Aluno ID={aluno.id} ({aluno.pessoa.nome}) atualizou previsão para {data_obj}: "
-            f"vai_ida={vai_ida}, vai_volta={vai_volta}."
+            f"vai_ida={previsao.vai_ida}, vai_volta={previsao.vai_volta}."
         )
 
         total_ida = PrevisaoViagem.objects.filter(data=data_obj, aluno__cliente=aluno.cliente, vai_ida=True, ativo=True).count()
         total_volta = PrevisaoViagem.objects.filter(data=data_obj, aluno__cliente=aluno.cliente, vai_volta=True, ativo=True).count()
 
         resp_data = dict(PrevisaoViagemSerializer(previsao).data)
+        resp_data["data"] = str(data_obj)
+        resp_data["registrado"] = True
         resp_data["total_colegas_ida"] = total_ida
         resp_data["total_colegas_volta"] = total_volta
+        resp_data["mensagem"] = "Previsão de viagem confirmada com sucesso!"
         return Response(resp_data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
