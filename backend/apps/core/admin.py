@@ -30,6 +30,7 @@ from apps.core.models import (
     Viagem,
     PrevisaoViagem,
     Embarque,
+    Aviso,
 )
 
 
@@ -215,3 +216,17 @@ class EmbarqueAdmin(admin.ModelAdmin):
     search_fields = ('aluno__pessoa__nome', 'aluno__matricula', 'viagem__rota__nome')
     ordering = ('-timestamp',)
     readonly_fields = ('timestamp', 'created_at', 'updated_at')
+
+
+# ==============================================================================
+# 7. Mural de Avisos e Comunicados
+# ==============================================================================
+
+@admin.register(Aviso)
+class AvisoAdmin(admin.ModelAdmin):
+    list_display = ('titulo', 'tipo', 'cliente', 'autor', 'rota', 'ativo', 'criado_em')
+    list_filter = ('tipo', 'ativo', 'cliente', 'rota')
+    search_fields = ('titulo', 'mensagem', 'cliente__razao_social', 'autor__email')
+    ordering = ('-criado_em',)
+    readonly_fields = ('id', 'criado_em', 'updated_at')
+

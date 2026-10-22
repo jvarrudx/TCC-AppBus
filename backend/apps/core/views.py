@@ -38,6 +38,7 @@ from apps.core.models import (
     Viagem,
     PrevisaoViagem,
     Embarque,
+    Aviso,
     Registro_Consentimento,
     TipoStatusAprovacao,
     SentidoViagem,
@@ -51,6 +52,7 @@ from apps.core.permissions import (
     IsMotoristaOuAdmin,
     IsAluno,
     IsMotorista,
+    IsAdminOrMotoristaOrReadOnly,
 )
 from apps.core.serializers import (
     CustomTokenObtainPairSerializer,
@@ -75,6 +77,7 @@ from apps.core.serializers import (
     EmbarqueManualSerializer,
     EmbarqueResponseSerializer,
     DashboardViagemResponseSerializer,
+    AvisoSerializer,
 )
 
 logger = logging.getLogger(__name__)
@@ -1230,6 +1233,61 @@ class BuscaAlunoEmbarqueView(APIView):
             })
 
         return Response(resultados, status=status.HTTP_200_OK)
+
+
+# ==============================================================================
+# 11. MURAL DE AVISOS E COMUNICADOS ASSÍNCRONOS (Módulo de Mural)
+# ==============================================================================
+
+class AvisoViewSet(TenantBaseViewSet):
+    """
+    ViewSet para o Mural de Avisos e Comunicados Municipais.
+    Endpoint: /api/avisos/
+
+    Regras de Negócio e Permissões:
+    - Multi-tenancy Estrito: Usuários só visualizam e criam avisos do seu próprio cliente_id.
+    - Leitura (GET): Liberada para Alunos, Motoristas e Administradores do mesmo município.
+    - Escrita (POST, PUT, PATCH, DELETE): Exclusiva para Gestores (Administrador) e Motoristas.
+    - Filtros suportados:
+      - ?rota=<id>: filtra avisos específicos da rota ou avisos gerais (sem rota).
+      - ?tipo=<tipo>: filtra por tipo (GERAL, ATRASO, MANUTENCAO, URGENTE).
+    """
+    permission_classes = [IsAdminOrMotoristaOrReadOnly]
+    queryset = Aviso.objects.select_related('cliente', 'autor__pessoa', 'rota', 'viagem').all()
+    serializer_class = AvisoSerializer
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['titulo', 'mensagem', 'rota__nome']
+    ordering = ['-criado_em']
+
+    def get_queryset(self):
+        qs = super().get_queryset().filter(ativo=True)
+
+        rota_param = self.request.query_params.get('rota')
+        if rota_param and str(rota_param).isdigit():
+            qs = qs.filter(Q(rota_id=int(rota_param)) | Q(rota__isnull=True))
+
+        tipo_param = self.request.query_params.get('tipo')
+        if tipo_param:
+            qs = qs.filter(tipo=tipo_param.upper())
+
+        return qs
+
+    def perform_create(self, serializer):
+        cliente = self.get_tenant()
+        serializer.save(
+            cliente=cliente,
+            autor=self.request.user
+        )
+        logger.info(
+            f"[Mural de Avisos] Comunicado criado por {self.request.user.email} "
+            f"no Cliente ID={cliente.id} (Título: '{serializer.validated_data.get('titulo')}')."
+        )
+
+    def perform_destroy(self, instance):
+        instance.ativo = False
+        instance.save()
+        logger.info(f"[Mural de Avisos] Comunicado ID={instance.id} inativado com sucesso.")
+
 
 
 

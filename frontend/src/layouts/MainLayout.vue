@@ -31,6 +31,7 @@
         <!-- Atalhos Rápidos no Header (Desktop) para Gestor -->
         <div v-if="authStore.isGestor" class="gt-sm row q-gutter-x-xs q-mr-md">
           <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
+          <q-btn flat dense no-caps label="Mural" icon="campaign" size="sm" to="/mural" />
           <q-btn flat dense no-caps label="Fila de Alunos" icon="how_to_reg" size="sm" to="/admin/aprovacoes" />
           <q-btn flat dense no-caps label="Frota & Rotas" icon="directions_bus" size="sm" to="/admin/frota" />
           <q-btn flat dense no-caps label="Emitir QR Code" icon="qr_code_2" size="sm" to="/admin/qrcode" />
@@ -39,12 +40,14 @@
         <!-- Atalhos Rápidos para Motorista -->
         <div v-if="authStore.isMotorista" class="row q-gutter-x-xs q-mr-md">
           <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
+          <q-btn flat dense no-caps label="Mural" icon="campaign" size="sm" to="/mural" />
           <q-btn flat dense no-caps label="Painel Operacional" icon="sports_motorsports" size="sm" to="/motorista" text-color="primary" />
         </div>
 
         <!-- Atalhos Rápidos para Aluno -->
         <div v-if="authStore.isAluno" class="row q-gutter-x-xs q-mr-sm">
           <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
+          <q-btn flat dense no-caps label="Mural" icon="campaign" size="sm" to="/mural" />
           <q-btn flat dense no-caps label="Embarcar" icon="qr_code_scanner" size="sm" to="/aluno/qrcode" text-color="primary" />
           <q-btn flat dense no-caps label="Perfil" icon="manage_accounts" size="sm" to="/aluno/perfil" />
         </div>
@@ -119,6 +122,13 @@
             <q-icon name="qr_code_2" />
           </q-item-section>
           <q-item-section>Emissão de QR Code</q-item-section>
+        </q-item>
+
+        <q-item clickable v-ripple to="/mural" active-class="text-primary font-bold">
+          <q-item-section avatar>
+            <q-icon name="campaign" />
+          </q-item-section>
+          <q-item-section>Mural de Avisos</q-item-section>
         </q-item>
 
         <q-item clickable v-ripple to="/motorista" active-class="text-primary font-bold">

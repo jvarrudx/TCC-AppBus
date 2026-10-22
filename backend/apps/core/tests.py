@@ -34,6 +34,8 @@ from apps.core.models import (
     Viagem,
     PrevisaoViagem,
     Embarque,
+    Aviso,
+    TipoAviso,
     Documento_Legal,
     Registro_Consentimento,
     TipoStatusAprovacao,
@@ -1440,6 +1442,285 @@ class ConcorrenciaMVCCAPITestCase(APITransactionTestCase):
         self.assertEqual(sucessos, 1, f"Esperado 1 único check-in registrado, obtido: {sucessos}")
         self.assertEqual(rejeitados, 4, f"Esperado 4 rejeitados por anti-fraude, obtido: {rejeitados}")
         self.assertEqual(Embarque.objects.filter(viagem=self.viagem, aluno__pessoa__usuario=user_aluno).count(), 1)
+
+
+# ==============================================================================
+# 10. TESTES DO MURAL DE AVISOS E COMUNICADOS ASSÍNCRONOS
+# ==============================================================================
+
+class MuralAvisosAPITestCase(APITestCase):
+    """
+    Testes de Negócio e Segurança para o Mural de Avisos:
+    1. Criação de comunicados por Gestor (Administrador) e Motorista (HTTP 201).
+    2. Bloqueio de criação de comunicados por Alunos (HTTP 403 Forbidden).
+    3. Consulta de comunicados por Alunos do município (HTTP 200 OK).
+    4. Segregação estrita Multi-Tenant: Aluno do Município A não vê avisos do Município B.
+    5. Filtragem por Rota e por Tipo (GERAL, ATRASO, MANUTENCAO, URGENTE).
+    6. Inativação (soft delete): Motorista inativa seu próprio aviso com sucesso,
+       mas é impedido de inativar aviso de outro motorista (HTTP 403).
+    """
+
+    def setUp(self):
+        # 1. Município A
+        self.cliente_a = Cliente.objects.create(
+            cnpj="55.555.555/0001-55",
+            razao_social="Prefeitura Municipal Alvorada",
+            nome_fantasia="Prefeitura Alvorada",
+            ativo=True
+        )
+        self.instituicao_a = Instituicao.objects.create(
+            cliente=self.cliente_a,
+            nome="Universidade de Alvorada",
+            sigla="UNIALV",
+            ativo=True
+        )
+        self.rota_a = Rota.objects.create(
+            cliente=self.cliente_a,
+            nome="Linha Central 01",
+            ativo=True
+        )
+
+        # Gestor de Alvorada
+        self.user_admin_a = UsuarioAuth.objects.create_user(
+            email="gestor@alvorada.gov.br",
+            password="SenhaGestor2026!"
+        )
+        self.pessoa_admin_a = Pessoa.objects.create(
+            usuario=self.user_admin_a,
+            nome="Carlos Gestor",
+            cpf="111.111.111-11",
+            data_nascimento="1980-01-01"
+        )
+        self.admin_a = Administrador.objects.create(
+            pessoa=self.pessoa_admin_a,
+            cliente=self.cliente_a,
+            ativo=True
+        )
+
+        # Motorista 1 de Alvorada
+        self.user_mot_1 = UsuarioAuth.objects.create_user(
+            email="motorista1@alvorada.gov.br",
+            password="SenhaMotorista2026!"
+        )
+        self.pessoa_mot_1 = Pessoa.objects.create(
+            usuario=self.user_mot_1,
+            nome="Sebastiao Motorista",
+            cpf="222.222.222-22",
+            data_nascimento="1975-03-10"
+        )
+        self.motorista_1 = Motorista.objects.create(
+            pessoa=self.pessoa_mot_1,
+            cliente=self.cliente_a,
+            cnh="12345678901",
+            categoria_cnh="D",
+            ativo=True
+        )
+
+        # Motorista 2 de Alvorada
+        self.user_mot_2 = UsuarioAuth.objects.create_user(
+            email="motorista2@alvorada.gov.br",
+            password="SenhaMotorista2026!"
+        )
+        self.pessoa_mot_2 = Pessoa.objects.create(
+            usuario=self.user_mot_2,
+            nome="Antonio Motorista",
+            cpf="333.333.333-33",
+            data_nascimento="1982-08-20"
+        )
+        self.motorista_2 = Motorista.objects.create(
+            pessoa=self.pessoa_mot_2,
+            cliente=self.cliente_a,
+            cnh="98765432100",
+            categoria_cnh="D",
+            ativo=True
+        )
+
+        # Aluno de Alvorada
+        self.user_aluno_a = UsuarioAuth.objects.create_user(
+            email="aluno@alvorada.edu.br",
+            password="SenhaAluno2026!"
+        )
+        self.pessoa_aluno_a = Pessoa.objects.create(
+            usuario=self.user_aluno_a,
+            nome="Juliana Estudante",
+            cpf="444.444.444-44",
+            data_nascimento="2003-09-15"
+        )
+        self.aluno_a = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_a,
+            cliente=self.cliente_a,
+            instituicao=self.instituicao_a,
+            matricula="MAT-ALV-01",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+        # 2. Município B (Isolamento Multi-tenant)
+        self.cliente_b = Cliente.objects.create(
+            cnpj="66.666.666/0001-66",
+            razao_social="Prefeitura Municipal Bela Vista",
+            nome_fantasia="Prefeitura Bela Vista",
+            ativo=True
+        )
+        self.instituicao_b = Instituicao.objects.create(
+            cliente=self.cliente_b,
+            nome="Faculdade Bela Vista",
+            sigla="FBV",
+            ativo=True
+        )
+        self.user_aluno_b = UsuarioAuth.objects.create_user(
+            email="aluno@belavista.edu.br",
+            password="SenhaAluno2026!"
+        )
+        self.pessoa_aluno_b = Pessoa.objects.create(
+            usuario=self.user_aluno_b,
+            nome="Lucas Bela Vista",
+            cpf="555.555.555-55",
+            data_nascimento="2002-11-20"
+        )
+        self.aluno_b = Aluno.objects.create(
+            pessoa=self.pessoa_aluno_b,
+            cliente=self.cliente_b,
+            instituicao=self.instituicao_b,
+            matricula="MAT-BV-01",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+    def test_motorista_e_administrador_criam_aviso_sucesso(self):
+        """Motoristas e Administradores conseguem disparar comunicados (HTTP 201)."""
+        # 1. Motorista publica aviso de atraso vinculado à rota
+        self.client.force_authenticate(user=self.user_mot_1)
+        payload_motorista = {
+            "titulo": "Atraso no trajeto da manhã",
+            "mensagem": "Ônibus retido por 15 minutos devido a obras na pista.",
+            "tipo": "ATRASO",
+            "rota": self.rota_a.id
+        }
+        resp_mot = self.client.post('/api/avisos/', payload_motorista, format='json')
+        self.assertEqual(resp_mot.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp_mot.data['tipo'], 'ATRASO')
+        self.assertEqual(resp_mot.data['autor_nome'], "Sebastiao Motorista")
+        self.assertEqual(resp_mot.data['autor_papel'], "Motorista")
+        self.assertEqual(resp_mot.data['rota_nome'], "Linha Central 01")
+
+        # 2. Administrador publica aviso geral do município
+        self.client.force_authenticate(user=self.user_admin_a)
+        payload_admin = {
+            "titulo": "Recesso Feriado Municipal",
+            "mensagem": "Não haverá transporte no dia 25/10.",
+            "tipo": "GERAL"
+        }
+        resp_admin = self.client.post('/api/avisos/', payload_admin, format='json')
+        self.assertEqual(resp_admin.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(resp_admin.data['tipo'], 'GERAL')
+        self.assertEqual(resp_admin.data['autor_nome'], "Carlos Gestor")
+        self.assertEqual(resp_admin.data['autor_papel'], "Administrador")
+        self.assertIsNone(resp_admin.data['rota'])
+
+    def test_aluno_bloqueado_ao_tentar_criar_aviso(self):
+        """Aluno possui acesso estritamente de leitura (tentativa de POST resulta em 403 Forbidden)."""
+        self.client.force_authenticate(user=self.user_aluno_a)
+        payload = {
+            "titulo": "Tentativa não autorizada",
+            "mensagem": "Aluno tentando criar aviso",
+            "tipo": "GERAL"
+        }
+        response = self.client.post('/api/avisos/', payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_aluno_consulta_avisos_do_seu_municipio(self):
+        """Aluno consegue listar comunicados ativos de seu município (HTTP 200)."""
+        Aviso.objects.create(
+            cliente=self.cliente_a,
+            autor=self.user_mot_1,
+            titulo="Aviso Teste Leitura",
+            mensagem="Mensagem de teste para os estudantes",
+            tipo=TipoAviso.GERAL,
+            ativo=True
+        )
+
+        self.client.force_authenticate(user=self.user_aluno_a)
+        response = self.client.get('/api/avisos/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Handle paginated or list response
+        results = response.data['results'] if isinstance(response.data, dict) and 'results' in response.data else response.data
+        self.assertGreaterEqual(len(results), 1)
+        self.assertEqual(results[0]['titulo'], "Aviso Teste Leitura")
+
+    def test_isolamento_multi_tenant_aluno_b_nao_ve_avisos_cliente_a(self):
+        """Multi-tenant: Aluno do Cliente B não enxerga comunicados criados no Cliente A."""
+        Aviso.objects.create(
+            cliente=self.cliente_a,
+            autor=self.user_mot_1,
+            titulo="Aviso Exclusivo Prefeitura A",
+            mensagem="Informações sigilosas de Alvorada",
+            tipo=TipoAviso.URGENTE,
+            ativo=True
+        )
+
+        self.client.force_authenticate(user=self.user_aluno_b)
+        response = self.client.get('/api/avisos/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        results = response.data['results'] if isinstance(response.data, dict) and 'results' in response.data else response.data
+        self.assertEqual(len(results), 0)
+
+    def test_filtro_por_tipo_e_por_rota(self):
+        """Valida query params de filtragem ?tipo=URGENTE e ?rota=<id>."""
+        aviso_rota = Aviso.objects.create(
+            cliente=self.cliente_a,
+            autor=self.user_mot_1,
+            rota=self.rota_a,
+            titulo="Aviso Específico de Rota",
+            mensagem="Atenção passageiros da Linha Central",
+            tipo=TipoAviso.URGENTE,
+            ativo=True
+        )
+        aviso_geral = Aviso.objects.create(
+            cliente=self.cliente_a,
+            autor=self.user_admin_a,
+            titulo="Aviso Geral Geral",
+            mensagem="Para todos",
+            tipo=TipoAviso.GERAL,
+            ativo=True
+        )
+
+        self.client.force_authenticate(user=self.user_aluno_a)
+
+        # Filtro por tipo URGENTE
+        resp_urgente = self.client.get('/api/avisos/?tipo=URGENTE')
+        res_urg = resp_urgente.data['results'] if isinstance(resp_urgente.data, dict) and 'results' in resp_urgente.data else resp_urgente.data
+        self.assertEqual(len(res_urg), 1)
+        self.assertEqual(res_urg[0]['titulo'], "Aviso Específico de Rota")
+
+        # Filtro por rota
+        resp_rota = self.client.get(f'/api/avisos/?rota={self.rota_a.id}')
+        res_rota = resp_rota.data['results'] if isinstance(resp_rota.data, dict) and 'results' in resp_rota.data else resp_rota.data
+        self.assertEqual(len(res_rota), 2)  # Aviso da rota + aviso geral sem rota
+
+    def test_motorista_inativa_proprio_aviso_e_bloqueia_aviso_alheio(self):
+        """Motorista pode inativar seu próprio comunicado, mas não o de outro motorista."""
+        aviso_mot1 = Aviso.objects.create(
+            cliente=self.cliente_a,
+            autor=self.user_mot_1,
+            titulo="Aviso Motorista 1",
+            mensagem="Mensagem 1",
+            tipo=TipoAviso.ATRASO,
+            ativo=True
+        )
+
+        # Motorista 2 tenta inativar aviso do Motorista 1 -> 403 Forbidden
+        self.client.force_authenticate(user=self.user_mot_2)
+        resp_del_alheio = self.client.delete(f'/api/avisos/{aviso_mot1.id}/')
+        self.assertEqual(resp_del_alheio.status_code, status.HTTP_403_FORBIDDEN)
+
+        # Motorista 1 inativa seu próprio aviso -> 204 No Content
+        self.client.force_authenticate(user=self.user_mot_1)
+        resp_del_proprio = self.client.delete(f'/api/avisos/{aviso_mot1.id}/')
+        self.assertEqual(resp_del_proprio.status_code, status.HTTP_204_NO_CONTENT)
+
+        # No banco, aviso foi soft-deleted (ativo=False)
+        aviso_mot1.refresh_from_db()
+        self.assertFalse(aviso_mot1.ativo)
+
 
 
 

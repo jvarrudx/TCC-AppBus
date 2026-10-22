@@ -57,6 +57,12 @@ const routes = [
         name: 'aluno-perfil',
         component: () => import('../pages/student/StudentProfilePage.vue'),
         meta: { title: 'Perfil & Privacidade | AppBus' }
+      },
+      {
+        path: 'mural',
+        name: 'mural-avisos',
+        component: () => import('../pages/MuralAvisosPage.vue'),
+        meta: { title: 'Mural de Avisos | AppBus' }
       }
     ]
   },

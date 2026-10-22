@@ -55,6 +55,14 @@ class TipoStatusAprovacao(models.TextChoices):
     REJEITADO = 'REJEITADO', 'Rejeitado'
 
 
+class TipoAviso(models.TextChoices):
+    """Classificação dos comunicados do mural de avisos."""
+    GERAL = 'GERAL', 'Geral'
+    ATRASO = 'ATRASO', 'Atraso'
+    MANUTENCAO = 'MANUTENCAO', 'Manutenção'
+    URGENTE = 'URGENTE', 'Urgente'
+
+
 # Aliases para retrocompatibilidade
 TipoSentidoViagem = SentidoViagem
 TipoStatusViagem = StatusViagem
@@ -1069,4 +1077,90 @@ class Embarque(models.Model):
 
     def __str__(self):
         return f"Embarque: {self.aluno.pessoa.nome} na {self.viagem.rota.nome} via {self.get_metodo_validacao_display()} às {self.timestamp.strftime('%H:%M:%S')}"
+
+
+# ==============================================================================
+# 11. MURAL DE AVISOS E COMUNICADOS ASSÍNCRONOS (Módulo de Mural)
+# ==============================================================================
+
+class Aviso(models.Model):
+    """
+    Mural de Avisos e Comunicados Assíncronos municipais.
+    Permite à gestão pública e motoristas publicarem comunicados operacionais
+    (avisos gerais, atrasos, manutenções na frota ou urgências) para os alunos.
+
+    Isolamento Multi-tenant:
+    - Todo aviso pertence estritamente ao cliente (prefeitura) do autor.
+    - Pode ser geral ou restrito a uma Rota ou Viagem específica.
+    """
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        verbose_name="ID (UUID)"
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='avisos',
+        verbose_name="Cliente (Prefeitura)"
+    )
+    autor = models.ForeignKey(
+        UsuarioAuth,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='avisos_criados',
+        verbose_name="Autor do Comunicado"
+    )
+    rota = models.ForeignKey(
+        Rota,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='avisos',
+        verbose_name="Rota Específica"
+    )
+    viagem = models.ForeignKey(
+        Viagem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='avisos',
+        verbose_name="Viagem Específica"
+    )
+    titulo = models.CharField(
+        max_length=150,
+        verbose_name="Título do Comunicado"
+    )
+    mensagem = models.TextField(
+        verbose_name="Mensagem do Comunicado"
+    )
+    tipo = models.CharField(
+        max_length=20,
+        choices=TipoAviso.choices,
+        default=TipoAviso.GERAL,
+        verbose_name="Tipo de Comunicado"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    criado_em = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'aviso'
+        verbose_name = 'Aviso'
+        verbose_name_plural = 'Avisos'
+        ordering = ['-criado_em']
+
+    def __str__(self):
+        return f"[{self.get_tipo_display()}] {self.titulo} ({self.cliente.razao_social})"
 

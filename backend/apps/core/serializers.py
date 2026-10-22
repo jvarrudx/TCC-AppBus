@@ -41,6 +41,8 @@ from apps.core.models import (
     Viagem,
     PrevisaoViagem,
     Embarque,
+    Aviso,
+    TipoAviso,
     SentidoViagem,
     StatusViagem,
     MetodoValidacao,
@@ -982,6 +984,65 @@ class DashboardViagemResponseSerializer(serializers.Serializer):
     total_embarcados = serializers.IntegerField()
     vagas_restantes = serializers.IntegerField()
     percentual_ocupacao = serializers.FloatField()
+
+
+# ==============================================================================
+# 8. SERIALIZERS DE MURAL E COMUNICADOS (Módulo de Mural)
+# ==============================================================================
+
+class AvisoSerializer(serializers.ModelSerializer):
+    """
+    Serializer para o Mural de Avisos e Comunicados.
+    Exibe dados do comunicado e enriquece com metadados do autor e rota para o chat/mural.
+    """
+    autor_nome = serializers.SerializerMethodField(read_only=True)
+    autor_papel = serializers.SerializerMethodField(read_only=True)
+    rota_nome = serializers.CharField(source='rota.nome', read_only=True, allow_null=True)
+    tipo_display = serializers.CharField(source='get_tipo_display', read_only=True)
+    cliente_nome = serializers.CharField(source='cliente.razao_social', read_only=True)
+
+    class Meta:
+        model = Aviso
+        fields = [
+            'id',
+            'cliente',
+            'cliente_nome',
+            'autor',
+            'autor_nome',
+            'autor_papel',
+            'rota',
+            'rota_nome',
+            'viagem',
+            'titulo',
+            'mensagem',
+            'tipo',
+            'tipo_display',
+            'ativo',
+            'criado_em',
+            'updated_at',
+        ]
+        read_only_fields = ['id', 'cliente', 'autor', 'criado_em', 'updated_at']
+
+    def get_autor_nome(self, obj) -> str:
+        if not obj.autor:
+            return "Sistema AppBus"
+        if hasattr(obj.autor, 'pessoa') and obj.autor.pessoa.nome:
+            return obj.autor.pessoa.nome
+        return obj.autor.email
+
+    def get_autor_papel(self, obj) -> str:
+        if not obj.autor:
+            return "Sistema"
+        if hasattr(obj.autor, 'pessoa'):
+            pessoa = obj.autor.pessoa
+            if hasattr(pessoa, 'administrador') and pessoa.administrador.ativo:
+                return "Administrador"
+            if hasattr(pessoa, 'motorista') and pessoa.motorista.ativo:
+                return "Motorista"
+        if obj.autor.is_superuser:
+            return "Administrador"
+        return "Usuário"
+
 
 
 

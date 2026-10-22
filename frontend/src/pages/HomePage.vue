@@ -23,6 +23,63 @@
       </div>
     </q-card>
 
+    <!-- 0. MURAL DE AVISOS: COMUNICADOS RECENTES E ACESSO RÁPIDO -->
+    <q-card class="dark-card q-pa-md q-mb-md border-mural-highlight cursor-pointer" @click="$router.push('/mural')">
+      <div class="row items-center justify-between q-mb-xs">
+        <div class="row items-center">
+          <q-avatar size="32px" color="primary" text-color="dark" class="q-mr-sm">
+            <q-icon name="campaign" size="18px" />
+          </q-avatar>
+          <div>
+            <div class="text-subtitle2 text-weight-bold text-white leading-tight">
+              Mural de Avisos & Comunicados
+            </div>
+            <div class="text-caption text-grey-4" style="font-size: 0.72rem;">
+              Linhas municipais em tempo real
+            </div>
+          </div>
+        </div>
+
+        <q-btn
+          flat
+          dense
+          no-caps
+          color="primary"
+          label="Ver Mural"
+          icon-right="arrow_forward"
+          size="sm"
+          to="/mural"
+        />
+      </div>
+
+      <!-- Preview do Aviso Mais Recente (se houver) -->
+      <div v-if="ultimoAviso" class="q-mt-sm q-pa-sm rounded-borders preview-aviso-box">
+        <div class="row items-center justify-between q-mb-xs">
+          <q-badge
+            :color="getBadgeColor(ultimoAviso.tipo)"
+            :text-color="ultimoAviso.tipo === 'ATRASO' || ultimoAviso.tipo === 'GERAL' ? 'dark' : 'white'"
+            class="text-weight-bolder"
+          >
+            {{ ultimoAviso.tipo_display || ultimoAviso.tipo }}
+          </q-badge>
+          <span class="text-caption text-grey-5" style="font-size: 0.68rem;">
+            {{ formatHora(ultimoAviso.criado_em) }} • {{ ultimoAviso.autor_papel }}
+          </span>
+        </div>
+        <div class="text-caption text-weight-bold text-white ellipsis">
+          {{ ultimoAviso.titulo }}
+        </div>
+        <div class="text-caption text-grey-4 ellipsis" style="font-size: 0.72rem;">
+          {{ ultimoAviso.mensagem }}
+        </div>
+      </div>
+
+      <div v-else-if="!loadingAvisos" class="q-mt-xs text-caption text-grey-5" style="font-size: 0.74rem;">
+        <q-icon name="check_circle" color="positive" size="14px" class="q-mr-xs" />
+        Nenhum imprevisto ou aviso pendente no momento.
+      </div>
+    </q-card>
+
     <!-- PAINEL EXECUTIVO: Gestor Municipal (Etapa 3.3) -->
     <div v-if="authStore.isGestor" class="q-gutter-y-md q-mb-md">
       <!-- Cards de Métricas em Tempo Real -->
@@ -207,6 +264,7 @@ import { ref, reactive, computed, onMounted } from 'vue'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '../stores/authStore'
 import api from '../boot/axios'
+import { avisosService } from '../services/api'
 import StudentHomeSection from '../components/StudentHomeSection.vue'
 
 const $q = useQuasar()
@@ -214,6 +272,9 @@ const authStore = useAuthStore()
 
 const backendOk = ref(false)
 const dbOk = ref(false)
+
+const ultimoAviso = ref(null)
+const loadingAvisos = ref(false)
 
 const metricas = reactive({
   pendentes: 0,
@@ -241,6 +302,41 @@ const roleBadgeColor = computed(() => {
   return 'accent'
 })
 
+const getBadgeColor = (tipo) => {
+  switch (tipo) {
+    case 'URGENTE': return 'negative'
+    case 'ATRASO': return 'warning'
+    case 'MANUTENCAO': return 'info'
+    default: return 'primary'
+  }
+}
+
+const formatHora = (dataStr) => {
+  if (!dataStr) return '--:--'
+  try {
+    const d = new Date(dataStr)
+    return d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+  } catch (e) {
+    return '--:--'
+  }
+}
+
+const fetchUltimoAviso = async () => {
+  loadingAvisos.value = true
+  try {
+    const response = await avisosService.getAvisos()
+    const lista = response.data?.results || response.data || []
+    if (lista.length > 0) {
+      ultimoAviso.value = lista[0]
+    } else {
+      ultimoAviso.value = null
+    }
+  } catch (e) {
+    ultimoAviso.value = null
+  } finally {
+    loadingAvisos.value = false
+  }
+}
 
 const fetchMetricasAdmin = async () => {
   if (!authStore.isGestor) return
@@ -271,6 +367,7 @@ const checkHealth = async () => {
 
 onMounted(() => {
   checkHealth()
+  fetchUltimoAviso()
   if (authStore.isGestor) {
     fetchMetricasAdmin()
   }
@@ -287,5 +384,20 @@ onMounted(() => {
 
 .border-pending {
   border: 1px solid #F2C037;
+}
+
+.border-mural-highlight {
+  border: 1px solid rgba(242, 192, 55, 0.3);
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #F2C037;
+    box-shadow: 0 4px 18px rgba(242, 192, 55, 0.15);
+  }
+}
+
+.preview-aviso-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
 }
 </style>
