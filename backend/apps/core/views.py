@@ -941,8 +941,8 @@ class EmbarqueQRCodeView(APIView):
                 status=status.HTTP_403_FORBIDDEN
             )
 
-        # Localiza a viagem em andamento para este ônibus hoje
-        viagem = Viagem.objects.filter(
+        # Localiza a viagem em andamento para este ônibus hoje com bloqueio pessimista (MVCC PostgreSQL)
+        viagem = Viagem.objects.select_for_update().filter(
             onibus=onibus,
             status=StatusViagem.EM_ANDAMENTO,
             data=date.today()
@@ -1013,7 +1013,7 @@ class EmbarqueManualView(APIView):
         viagem_id = serializer.validated_data['viagem_id']
         aluno_id = serializer.validated_data['aluno_id']
 
-        viagem = Viagem.objects.select_related('rota__cliente', 'onibus').filter(id=viagem_id).first()
+        viagem = Viagem.objects.select_for_update().filter(id=viagem_id).first()
         if not viagem:
             return Response({"erro": "Viagem não encontrada."}, status=status.HTTP_404_NOT_FOUND)
 

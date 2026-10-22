@@ -15,7 +15,9 @@ from datetime import date
 from unittest.mock import patch
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.test import APITestCase
+from rest_framework.test import APITestCase, APITransactionTestCase, APIClient
+from django.db import connection
+import concurrent.futures
 
 from apps.core.models import (
     UsuarioAuth,
@@ -1291,6 +1293,154 @@ class OperacaoCoreAPITestCase(APITestCase):
 
         self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("capacidade máxima", resp.data['erro'].lower())
+
+
+# ==============================================================================
+# 9. TESTES DE CONCORRÊNCIA E CONTROLE TRANSACIONAL MVCC (Etapa 4.4)
+# ==============================================================================
+
+class ConcorrenciaMVCCAPITestCase(APITransactionTestCase):
+    """
+    Testes de Concorrência e Isolamento Transacional (MVCC do PostgreSQL).
+    Valida a integridade do banco de dados perante requisições simultâneas reais
+    executadas em múltiplas threads:
+    1. Lotação Concorrente: Múltiplos alunos disputando as últimas vagas no mesmo milissegundo.
+    2. Anti-duplicidade Concorrente: Tentativas simultâneas de check-in para o mesmo aluno.
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            cnpj="70.000.000/0001-70",
+            razao_social="Prefeitura Concorrencia",
+            nome_fantasia="Prefeitura Concorrencia",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Faculdade de Alta Concorrência",
+            sigla="FAC",
+            ativo=True
+        )
+        self.modelo = ModeloVeiculo.objects.create(marca="Volksbus", nome="17.230")
+        self.onibus = Onibus.objects.create(
+            cliente=self.cliente,
+            modelo=self.modelo,
+            placa="CCX-2026",
+            capacidade=3,  # Capacidade estrita de 3 vagas
+            ativo=True
+        )
+        self.rota = Rota.objects.create(
+            cliente=self.cliente,
+            nome="Linha MVCC Express",
+            ativo=True
+        )
+        user_motorista = UsuarioAuth.objects.create_user(
+            email="motorista.mvcc@prefeitura.gov.br",
+            password="SenhaMotorista2026!"
+        )
+        pessoa_motorista = Pessoa.objects.create(
+            usuario=user_motorista,
+            nome="Joao Motorista MVCC",
+            cpf="777.666.555-44",
+            data_nascimento="1980-04-10"
+        )
+        self.motorista = Motorista.objects.create(
+            pessoa=pessoa_motorista,
+            cliente=self.cliente,
+            cnh="77788899900",
+            categoria_cnh="D",
+            ativo=True
+        )
+        self.viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+
+    def _criar_aluno_aprovado(self, idx):
+        user = UsuarioAuth.objects.create_user(
+            email=f"aluno.mvcc.{idx}@fac.edu.br",
+            password="SenhaAluno2026!"
+        )
+        pessoa = Pessoa.objects.create(
+            usuario=user,
+            nome=f"Aluno Concorrente {idx}",
+            cpf=f"888.777.666-{idx:02d}",
+            data_nascimento="2002-05-15"
+        )
+        aluno = Aluno.objects.create(
+            pessoa=pessoa,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula=f"MAT-CC-{idx:03d}",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+        return user, aluno
+
+    def test_concorrencia_lotacao_maxima_bloqueio_estrito_mvcc(self):
+        """
+        Simula 8 alunos tentando embarcar simultaneamente em um ônibus com apenas 3 vagas.
+        Garante que exatamente 3 consigam embarcar (201 Created) e 5 sejam rejeitados (400 Bad Request).
+        Comprova ausência de sobre-lotação por condição de corrida no PostgreSQL.
+        """
+        num_tentativas = 8
+        usuarios = [self._criar_aluno_aprovado(i)[0] for i in range(1, num_tentativas + 1)]
+        qr_code = str(self.onibus.qr_code_uuid)
+
+        def worker_checkin(user_auth):
+            try:
+                client = APIClient()
+                client.force_authenticate(user=user_auth)
+                resp = client.post('/api/operacao/embarque/qrcode/', {'qr_code_uuid': qr_code}, format='json')
+                return resp.status_code, resp.data
+            finally:
+                connection.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_tentativas) as executor:
+            resultados = list(executor.map(worker_checkin, usuarios))
+
+        status_codes = [r[0] for r in resultados]
+        sucessos = status_codes.count(status.HTTP_201_CREATED)
+        rejeitados = status_codes.count(status.HTTP_400_BAD_REQUEST)
+
+        # Asserções de Isolamento MVCC
+        self.assertEqual(sucessos, 3, f"Esperado exatamente 3 sucessos, obtido: {sucessos}")
+        self.assertEqual(rejeitados, 5, f"Esperado 5 rejeitados por lotação, obtido: {rejeitados}")
+        self.assertEqual(Embarque.objects.filter(viagem=self.viagem, ativo=True).count(), 3)
+
+    def test_concorrencia_duplicidade_checkin_mesmo_aluno_mvcc(self):
+        """
+        Simula o mesmo aluno enviando 5 requisições de check-in simultâneas (double-tap agressivo).
+        Garante que apenas 1 seja aceita (201 Created) e as outras 4 sejam rejeitadas (400 Bad Request).
+        """
+        user_aluno, _ = self._criar_aluno_aprovado(99)
+        qr_code = str(self.onibus.qr_code_uuid)
+        num_tentativas = 5
+
+        def worker_checkin(_):
+            try:
+                client = APIClient()
+                client.force_authenticate(user=user_aluno)
+                resp = client.post('/api/operacao/embarque/qrcode/', {'qr_code_uuid': qr_code}, format='json')
+                return resp.status_code, resp.data
+            finally:
+                connection.close()
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_tentativas) as executor:
+            resultados = list(executor.map(worker_checkin, range(num_tentativas)))
+
+        status_codes = [r[0] for r in resultados]
+        sucessos = status_codes.count(status.HTTP_201_CREATED)
+        rejeitados = status_codes.count(status.HTTP_400_BAD_REQUEST)
+
+        self.assertEqual(sucessos, 1, f"Esperado 1 único check-in registrado, obtido: {sucessos}")
+        self.assertEqual(rejeitados, 4, f"Esperado 4 rejeitados por anti-fraude, obtido: {rejeitados}")
+        self.assertEqual(Embarque.objects.filter(viagem=self.viagem, aluno__pessoa__usuario=user_aluno).count(), 1)
+
 
 
 

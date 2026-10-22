@@ -91,6 +91,6 @@ Atuando como Engenheiro Frontend Sênior e Especialista em UI/UX, iniciaremos ag
 - [x] **Etapa 4.3: Tela de Perfil e LGPD**
   - Visualização de dados do perfil.
   - Botão "Gerenciar Privacidade" -> Opção para "Revogar Consentimento e Excluir Conta" (Aciona o endpoint de anonimização do backend).
-- [ ] **Etapa 4.4: Testes e Refinamento MVP**
+- [x] **Etapa 4.4: Testes e Refinamento MVP**
   - Testes de concorrência: simular múltiplos check-ins simultâneos (validação do MVCC do PostgreSQL).
   - Auditoria no PWA pelo Lighthouse (Chrome) para validar cache e instalabilidade.
