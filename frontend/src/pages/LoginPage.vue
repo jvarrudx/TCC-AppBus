@@ -207,6 +207,18 @@ const selectProfile = (profile) => {
 }
 
 onMounted(() => {
+  const logoutReason = localStorage.getItem('appbus_logout_reason')
+  if (logoutReason) {
+    localStorage.removeItem('appbus_logout_reason')
+    $q.notify({
+      type: 'warning',
+      icon: 'lock_clock',
+      message: logoutReason,
+      timeout: 5000,
+      position: 'top'
+    })
+  }
+
   if (route.query.email) {
     email.value = String(route.query.email)
   } else if (demoCredentials[selectedProfile.value]) {

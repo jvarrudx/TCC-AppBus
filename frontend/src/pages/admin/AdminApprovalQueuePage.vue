@@ -69,8 +69,26 @@
       </div>
     </q-card>
 
+    <!-- Error State -->
+    <div v-if="fetchError && !loading" class="text-center q-pa-xl dark-card rounded-borders border-danger">
+      <q-icon name="error_outline" size="56px" color="negative" class="q-mb-sm" />
+      <div class="text-h6 text-white text-weight-bold">Falha ao carregar fila de aprovação</div>
+      <p class="text-caption text-grey-4 q-mt-xs q-mb-md">
+        {{ fetchError }}
+      </p>
+      <q-btn
+        color="primary"
+        text-color="dark"
+        icon="refresh"
+        label="Tentar Novamente"
+        class="btn-bus-primary text-weight-bold"
+        no-caps
+        @click="fetchAlunos"
+      />
+    </div>
+
     <!-- Estado Vazio -->
-    <div v-if="!loading && filteredAlunos.length === 0" class="text-center q-pa-xl dark-card rounded-borders">
+    <div v-else-if="!loading && filteredAlunos.length === 0" class="text-center q-pa-xl dark-card rounded-borders">
       <q-icon name="how_to_reg" size="64px" color="grey-7" class="q-mb-sm" />
       <div class="text-h6 text-grey-4">Nenhum aluno encontrado</div>
       <p class="text-caption text-grey-5">
@@ -78,10 +96,10 @@
       </p>
     </div>
 
-    <!-- Loader -->
+    <!-- Loader com Skeleton / Spinner -->
     <div v-else-if="loading" class="text-center q-pa-xl">
-      <q-spinner color="primary" size="3em" />
-      <div class="text-caption text-grey-5 q-mt-sm">Carregando solicitações de alunos...</div>
+      <q-spinner-dots color="primary" size="52px" />
+      <div class="text-caption text-grey-4 q-mt-sm">Carregando solicitações de alunos com segurança multi-tenant...</div>
     </div>
 
     <!-- Lista de Cards de Alunos -->
@@ -246,6 +264,7 @@ import api from '../../boot/axios'
 const $q = useQuasar()
 
 const loading = ref(false)
+const fetchError = ref(null)
 const actionLoadingId = ref(null)
 const alunos = ref([])
 const searchQuery = ref('')
@@ -281,14 +300,20 @@ const filteredAlunos = computed(() => {
 
 const fetchAlunos = async () => {
   loading.value = true
+  fetchError.value = null
   try {
     const res = await api.get('/alunos/')
     alunos.value = res.data?.results || res.data || []
   } catch (error) {
+    const errorMsg = error.response?.data?.detail ||
+                     error.response?.data?.erro ||
+                     'Não foi possível consultar a fila de alunos no momento. Verifique sua conexão com o servidor.'
+    fetchError.value = errorMsg
     $q.notify({
       type: 'negative',
-      icon: 'warning',
-      message: 'Falha ao consultar fila de alunos da prefeitura.'
+      icon: 'cloud_off',
+      message: 'Falha ao sincronizar fila de alunos da prefeitura.',
+      timeout: 3500
     })
   } finally {
     loading.value = false
@@ -406,5 +431,9 @@ onMounted(() => {
   &:hover {
     transform: translateY(-2px);
   }
+}
+
+.border-danger {
+  border: 1px solid rgba(193, 0, 21, 0.4);
 }
 </style>

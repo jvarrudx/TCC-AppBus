@@ -58,10 +58,28 @@
         </div>
       </div>
 
+      <!-- Error State Ônibus -->
+      <div v-if="errorOnibus && !loadingOnibus" class="text-center q-pa-xl dark-card rounded-borders border-danger q-mb-md">
+        <q-icon name="error_outline" size="52px" color="negative" class="q-mb-sm" />
+        <div class="text-h6 text-white text-weight-bold">Falha ao carregar frota de veículos</div>
+        <p class="text-caption text-grey-4 q-mt-xs q-mb-md">
+          {{ errorOnibus }}
+        </p>
+        <q-btn
+          color="primary"
+          text-color="dark"
+          icon="refresh"
+          label="Tentar Novamente"
+          class="btn-bus-primary text-weight-bold"
+          no-caps
+          @click="fetchOnibus"
+        />
+      </div>
+
       <!-- Loader -->
-      <div v-if="loadingOnibus" class="text-center q-pa-xl">
-        <q-spinner color="primary" size="3em" />
-        <div class="text-caption text-grey-5 q-mt-sm">Carregando frota de veículos...</div>
+      <div v-else-if="loadingOnibus" class="text-center q-pa-xl">
+        <q-spinner-dots color="primary" size="48px" />
+        <div class="text-caption text-grey-4 q-mt-sm">Carregando frota de veículos...</div>
       </div>
 
       <!-- Empty State -->
@@ -81,8 +99,14 @@
                 <div class="text-h6 text-weight-bolder text-white flex items-center">
                   <span class="placa-badge q-mr-sm">{{ bus.placa }}</span>
                 </div>
-                <q-badge :color="bus.ativo ? 'positive' : 'grey-7'" text-color="dark">
+                <q-badge
+                  :color="bus.ativo ? 'positive' : 'grey-7'"
+                  :text-color="bus.ativo ? 'white' : 'grey-3'"
+                  class="cursor-pointer text-weight-bold"
+                  @click="toggleStatusOnibus(bus)"
+                >
                   {{ bus.ativo ? 'Em Operação' : 'Inativo' }}
+                  <q-tooltip>Clique para alternar status operacional</q-tooltip>
                 </q-badge>
               </div>
 
@@ -102,7 +126,7 @@
               </div>
             </div>
 
-            <!-- Ação de Emissão do QR Code -->
+            <!-- Ações do Veículo -->
             <div class="q-mt-md row q-gutter-x-sm">
               <q-btn
                 color="primary"
@@ -114,6 +138,16 @@
                 no-caps
                 @click="$router.push({ path: '/admin/qrcode', query: { onibusId: bus.id } })"
               />
+              <q-btn
+                flat
+                dense
+                round
+                :icon="bus.ativo ? 'pause_circle' : 'play_circle'"
+                :color="bus.ativo ? 'warning' : 'positive'"
+                @click="toggleStatusOnibus(bus)"
+              >
+                <q-tooltip>{{ bus.ativo ? 'Inativar Ônibus' : 'Ativar Ônibus' }}</q-tooltip>
+              </q-btn>
             </div>
           </q-card>
         </div>
@@ -150,10 +184,28 @@
         </div>
       </div>
 
+      <!-- Error State Rotas -->
+      <div v-if="errorRotas && !loadingRotas" class="text-center q-pa-xl dark-card rounded-borders border-danger q-mb-md">
+        <q-icon name="error_outline" size="52px" color="negative" class="q-mb-sm" />
+        <div class="text-h6 text-white text-weight-bold">Falha ao carregar rotas municipais</div>
+        <p class="text-caption text-grey-4 q-mt-xs q-mb-md">
+          {{ errorRotas }}
+        </p>
+        <q-btn
+          color="primary"
+          text-color="dark"
+          icon="refresh"
+          label="Tentar Novamente"
+          class="btn-bus-primary text-weight-bold"
+          no-caps
+          @click="fetchRotas"
+        />
+      </div>
+
       <!-- Loader -->
-      <div v-if="loadingRotas" class="text-center q-pa-xl">
-        <q-spinner color="primary" size="3em" />
-        <div class="text-caption text-grey-5 q-mt-sm">Carregando rotas municipais...</div>
+      <div v-else-if="loadingRotas" class="text-center q-pa-xl">
+        <q-spinner-dots color="primary" size="48px" />
+        <div class="text-caption text-grey-4 q-mt-sm">Carregando rotas municipais...</div>
       </div>
 
       <!-- Empty State -->
@@ -171,8 +223,14 @@
             <div>
               <div class="row items-center q-gutter-x-sm">
                 <span class="text-subtitle1 text-weight-bold text-white">{{ rota.nome }}</span>
-                <q-badge :color="rota.ativo ? 'positive' : 'grey-7'" text-color="dark">
+                <q-badge
+                  :color="rota.ativo ? 'positive' : 'grey-7'"
+                  :text-color="rota.ativo ? 'white' : 'grey-3'"
+                  class="cursor-pointer text-weight-bold"
+                  @click="toggleStatusRota(rota)"
+                >
                   {{ rota.ativo ? 'Ativa' : 'Desativada' }}
+                  <q-tooltip>Clique para alternar status da rota</q-tooltip>
                 </q-badge>
               </div>
 
@@ -195,6 +253,19 @@
                   Nenhuma parada específica vinculada
                 </div>
               </div>
+            </div>
+
+            <div>
+              <q-btn
+                flat
+                dense
+                round
+                :icon="rota.ativo ? 'visibility_off' : 'visibility'"
+                :color="rota.ativo ? 'grey-4' : 'positive'"
+                @click="toggleStatusRota(rota)"
+              >
+                <q-tooltip>{{ rota.ativo ? 'Desativar Rota' : 'Ativar Rota' }}</q-tooltip>
+              </q-btn>
             </div>
           </div>
         </q-card>
@@ -313,11 +384,13 @@ const $q = useQuasar()
 const tab = ref('frota')
 
 const loadingOnibus = ref(false)
+const errorOnibus = ref(null)
 const salvandoOnibus = ref(false)
 const onibusList = ref([])
 const showNovoOnibusModal = ref(false)
 
 const loadingRotas = ref(false)
+const errorRotas = ref(null)
 const salvandoRota = ref(false)
 const rotasList = ref([])
 const showNovaRotaModal = ref(false)
@@ -345,10 +418,15 @@ const modelosOptions = computed(() => {
 
 const fetchOnibus = async () => {
   loadingOnibus.value = true
+  errorOnibus.value = null
   try {
     const res = await api.get('/veiculos/onibus/')
     onibusList.value = res.data?.results || res.data || []
   } catch (error) {
+    const msg = error.response?.data?.detail ||
+                error.response?.data?.erro ||
+                'Falha ao carregar a frota de ônibus municipais.'
+    errorOnibus.value = msg
     $q.notify({
       type: 'negative',
       icon: 'warning',
@@ -361,10 +439,15 @@ const fetchOnibus = async () => {
 
 const fetchRotas = async () => {
   loadingRotas.value = true
+  errorRotas.value = null
   try {
     const res = await api.get('/rotas/')
     rotasList.value = res.data?.results || res.data || []
   } catch (error) {
+    const msg = error.response?.data?.detail ||
+                error.response?.data?.erro ||
+                'Falha ao consultar itinerários de rotas municipais.'
+    errorRotas.value = msg
     $q.notify({
       type: 'negative',
       icon: 'warning',
@@ -373,6 +456,64 @@ const fetchRotas = async () => {
   } finally {
     loadingRotas.value = false
   }
+}
+
+const toggleStatusOnibus = (bus) => {
+  const novoStatus = !bus.ativo
+  const acaoTexto = novoStatus ? 'ativar' : 'inativar'
+  $q.dialog({
+    title: `${novoStatus ? 'Ativar' : 'Inativar'} Veículo`,
+    message: `Deseja realmente ${acaoTexto} o ônibus com placa ${bus.placa}? ${!novoStatus ? 'Ele não poderá ser alocado para novas viagens.' : ''}`,
+    cancel: { label: 'Cancelar', flat: true, color: 'grey-5' },
+    ok: { label: 'Confirmar', color: novoStatus ? 'primary' : 'negative' },
+    dark: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      await api.patch(`/veiculos/onibus/${bus.id}/`, { ativo: novoStatus })
+      bus.ativo = novoStatus
+      $q.notify({
+        type: 'positive',
+        icon: 'check_circle',
+        message: `Status do veículo ${bus.placa} atualizado para ${novoStatus ? 'Em Operação' : 'Inativo'}.`
+      })
+    } catch (err) {
+      $q.notify({
+        type: 'negative',
+        icon: 'error',
+        message: err.response?.data?.detail || 'Erro ao atualizar status do veículo.'
+      })
+    }
+  })
+}
+
+const toggleStatusRota = (rota) => {
+  const novoStatus = !rota.ativo
+  const acaoTexto = novoStatus ? 'ativar' : 'desativar'
+  $q.dialog({
+    title: `${novoStatus ? 'Ativar' : 'Desativar'} Rota`,
+    message: `Deseja realmente ${acaoTexto} a rota "${rota.nome}"?`,
+    cancel: { label: 'Cancelar', flat: true, color: 'grey-5' },
+    ok: { label: 'Confirmar', color: novoStatus ? 'primary' : 'warning' },
+    dark: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      await api.patch(`/rotas/${rota.id}/`, { ativo: novoStatus })
+      rota.ativo = novoStatus
+      $q.notify({
+        type: 'positive',
+        icon: 'check_circle',
+        message: `Rota ${rota.nome} ${novoStatus ? 'ativada' : 'desativada'} com sucesso.`
+      })
+    } catch (err) {
+      $q.notify({
+        type: 'negative',
+        icon: 'error',
+        message: err.response?.data?.detail || 'Erro ao atualizar status da rota.'
+      })
+    }
+  })
 }
 
 const fetchModelos = async () => {
@@ -478,5 +619,9 @@ onMounted(() => {
   font-family: monospace;
   font-size: 0.7rem;
   word-break: break-all;
+}
+
+.border-danger {
+  border: 1px solid rgba(193, 0, 21, 0.4);
 }
 </style>

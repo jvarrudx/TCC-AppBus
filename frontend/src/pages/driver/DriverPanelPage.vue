@@ -54,6 +54,24 @@
       <span class="text-caption text-grey-4 q-mt-sm">Verificando status operacional...</span>
     </div>
 
+    <!-- Error State Inicial -->
+    <div v-else-if="errorInitial" class="text-center q-pa-xl dark-card rounded-borders border-danger">
+      <q-icon name="cloud_off" size="52px" color="negative" class="q-mb-sm" />
+      <div class="text-h6 text-white text-weight-bold">Falha ao conectar com o serviço de viagens</div>
+      <p class="text-caption text-grey-4 q-mt-xs q-mb-md">
+        {{ errorInitial }}
+      </p>
+      <q-btn
+        color="primary"
+        text-color="dark"
+        icon="refresh"
+        label="Tentar Novamente"
+        class="btn-bus-primary text-weight-bold"
+        no-caps
+        @click="recarregarPainelInicial"
+      />
+    </div>
+
     <!-- ========================================================================= -->
     <!-- ESTADO 1: NENHUMA VIAGEM EM ANDAMENTO -> TELA DE INICIAR VIAGEM           -->
     <!-- ========================================================================= -->
@@ -416,6 +434,7 @@ const syncing = ref(false)
 
 // Estados de Carga
 const loadingInitial = ref(true)
+const errorInitial = ref(null)
 const loadingRotas = ref(false)
 const loadingOnibus = ref(false)
 const startingViagem = ref(false)
@@ -519,6 +538,7 @@ const saveOfflineQueue = () => {
 
 // Verifica se há viagem ativa para este motorista hoje
 const fetchViagemAtiva = async () => {
+  errorInitial.value = null
   try {
     const response = await api.get('/operacao/viagem/ativa/')
     if (response.data.ativa) {
@@ -530,9 +550,20 @@ const fetchViagemAtiva = async () => {
     }
   } catch (error) {
     console.error('Erro ao verificar viagem ativa:', error)
+    if (!error.response || error.code === 'ERR_NETWORK') {
+      errorInitial.value = 'Sem conexão com o servidor. Verifique seu sinal de rede ou tente novamente.'
+    } else {
+      errorInitial.value = error.response?.data?.detail || error.response?.data?.erro || 'Falha ao sincronizar painel operacional.'
+    }
   } finally {
     loadingInitial.value = false
   }
+}
+
+const recarregarPainelInicial = async () => {
+  errorInitial.value = null
+  loadingInitial.value = true
+  await fetchViagemAtiva()
 }
 
 // Carrega rotas e ônibus da prefeitura do motorista
@@ -890,5 +921,9 @@ onUnmounted(() => {
   50% {
     opacity: 0.5;
   }
+}
+
+.border-danger {
+  border: 1px solid rgba(193, 0, 21, 0.4);
 }
 </style>

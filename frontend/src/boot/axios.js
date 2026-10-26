@@ -98,14 +98,20 @@ api.interceptors.response.use(
       }
     }
 
+    if (error.response && error.response.status === 403) {
+      // Erro de autorização / RBAC no backend
+      console.warn('[AppBus API 403] Acesso negado pelo servidor:', error.config?.url)
+    }
+
     return Promise.reject(error)
   }
 )
 
-function clearAuthAndRedirect() {
+function clearAuthAndRedirect(reason = 'Sua sessão expirou por segurança. Por favor, acesse novamente.') {
   localStorage.removeItem('appbus_access_token')
   localStorage.removeItem('appbus_refresh_token')
   localStorage.removeItem('appbus_user')
+  localStorage.setItem('appbus_logout_reason', reason)
   delete api.defaults.headers.common['Authorization']
 
   if (window.location.pathname !== '/login') {
