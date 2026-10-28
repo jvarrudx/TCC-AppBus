@@ -48,50 +48,7 @@
       </div>
     </div>
 
-    <!-- 1. BARRA DE FILTROS RÁPIDOS POR TIPO -->
-    <q-card class="dark-card q-pa-sm">
-      <div class="row items-center justify-between q-col-gutter-xs">
-        <div class="col-12 col-sm-7">
-          <q-tabs
-            v-model="filtroTipo"
-            dense
-            no-caps
-            active-color="primary"
-            indicator-color="primary"
-            class="text-grey-4"
-            shrink
-            @update:model-value="carregarAvisos"
-          >
-            <q-tab name="TODOS" label="Todos" icon="forum" />
-            <q-tab name="URGENTE" label="Urgentes" icon="warning" class="text-negative" />
-            <q-tab name="ATRASO" label="Atrasos" icon="schedule" class="text-warning" />
-            <q-tab name="MANUTENCAO" label="Manutenção" icon="build" />
-            <q-tab name="GERAL" label="Gerais" icon="info" />
-          </q-tabs>
-        </div>
-
-        <!-- FILTRO POR ROTA ESPECÍFICA -->
-        <div class="col-12 col-sm-5">
-          <q-select
-            v-model="filtroRota"
-            :options="opcoesRotas"
-            dense
-            outlined
-            dark
-            emit-value
-            map-options
-            options-dense
-            label="Filtrar por Rota"
-            class="text-caption"
-            @update:model-value="carregarAvisos"
-          >
-            <template v-slot:prepend>
-              <q-icon name="alt_route" size="18px" color="primary" />
-            </template>
-          </q-select>
-        </div>
-      </div>
-    </q-card>
+    <!-- FEED DIRETO DE COMUNICADOS (SEM ABAS REDUNDANTES) -->
 
     <!-- 2. FEED DE COMUNICADOS -->
     <div v-if="loadingAvisos" class="text-center q-pa-xl">
@@ -450,19 +407,11 @@ const carregarRotas = async () => {
   }
 }
 
-// Carregar Comunicados Ativos com Filtros
+// Carregar Comunicados Ativos do Mural
 const carregarAvisos = async () => {
   loadingAvisos.value = true
   try {
-    const params = {}
-    if (filtroTipo.value && filtroTipo.value !== 'TODOS') {
-      params.tipo = filtroTipo.value
-    }
-    if (filtroRota.value) {
-      params.rota = filtroRota.value
-    }
-
-    const response = await avisosService.getAvisos(params)
+    const response = await avisosService.getAvisos()
     avisos.value = response.data?.results || response.data || []
   } catch (error) {
     console.error('Falha ao obter mural de avisos:', error)
