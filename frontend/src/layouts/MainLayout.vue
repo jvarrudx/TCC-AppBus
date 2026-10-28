@@ -1,9 +1,9 @@
 <template>
   <q-layout view="hHh lpR fFf" class="bg-dark-page">
-    <!-- Header Mobile-First -->
-    <q-header elevated class="bg-dark text-white q-py-xs" style="border-bottom: 1px solid rgba(255, 255, 255, 0.08);">
-      <q-toolbar>
-        <!-- Botão Menu Drawer (Aparece para Gestores) -->
+    <!-- Header Limpo e Não-Truncado -->
+    <q-header elevated class="bg-dark text-white q-py-xs app-header">
+      <q-toolbar class="q-px-md">
+        <!-- Botão Menu Drawer (Apenas para Gestor) -->
         <q-btn
           v-if="authStore.isGestor"
           flat
@@ -11,57 +11,42 @@
           round
           icon="menu"
           color="primary"
-          class="q-mr-sm"
+          class="q-mr-xs"
           @click="leftDrawerOpen = !leftDrawerOpen"
         >
-          <q-tooltip>Menu do Gestor</q-tooltip>
+          <q-tooltip>Menu Administrativo</q-tooltip>
         </q-btn>
 
-        <div class="row items-center cursor-pointer" @click="$router.push('/')">
-          <q-avatar size="34px" color="primary" text-color="dark" class="q-mr-sm">
+        <!-- Logo AppBus Sempre Íntegro -->
+        <div class="row items-center cursor-pointer no-wrap" @click="$router.push('/')">
+          <q-avatar size="34px" color="primary" text-color="dark" class="q-mr-sm shadow-1">
             <q-icon name="directions_bus" size="20px" />
           </q-avatar>
-          <q-toolbar-title class="text-weight-bold text-h6">
+          <div class="text-weight-bolder text-h6 text-white text-no-wrap">
             App<span class="text-primary">Bus</span>
-          </q-toolbar-title>
+          </div>
         </div>
 
         <q-space />
 
-        <!-- Atalhos Rápidos no Header (Desktop) para Gestor -->
-        <div v-if="authStore.isGestor" class="gt-sm row q-gutter-x-xs q-mr-md">
-          <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
-          <q-btn flat dense no-caps label="Mural" icon="campaign" size="sm" to="/mural" />
-          <q-btn flat dense no-caps label="Fila de Alunos" icon="how_to_reg" size="sm" to="/admin/aprovacoes" />
-          <q-btn flat dense no-caps label="Frota & Rotas" icon="directions_bus" size="sm" to="/admin/frota" />
-          <q-btn flat dense no-caps label="Emitir QR Code" icon="qr_code_2" size="sm" to="/admin/qrcode" />
-        </div>
-
-        <!-- Atalhos Rápidos para Motorista -->
-        <div v-if="authStore.isMotorista" class="row q-gutter-x-xs q-mr-md">
-          <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
-          <q-btn flat dense no-caps label="Mural" icon="campaign" size="sm" to="/mural" />
-          <q-btn flat dense no-caps label="Painel Operacional" icon="sports_motorsports" size="sm" to="/motorista" text-color="primary" />
-        </div>
-
-        <!-- Atalhos Rápidos para Aluno -->
-        <div v-if="authStore.isAluno" class="row q-gutter-x-xs q-mr-sm">
-          <q-btn flat dense no-caps label="Início" icon="home" size="sm" to="/" />
-          <q-btn flat dense no-caps label="Mural" icon="campaign" size="sm" to="/mural" />
-          <q-btn flat dense no-caps label="Embarcar" icon="qr_code_scanner" size="sm" to="/aluno/qrcode" text-color="primary" />
-          <q-btn flat dense no-caps label="Perfil" icon="manage_accounts" size="sm" to="/aluno/perfil" />
-        </div>
-
-        <!-- Informações do Usuário e Papel Ativo -->
-        <div class="row items-center q-gutter-x-sm">
+        <!-- Informações do Usuário e Logout -->
+        <div class="row items-center q-gutter-x-sm no-wrap">
           <div class="column text-right gt-xs">
-            <span class="text-caption text-weight-bold text-white">{{ authStore.userNome }}</span>
+            <span class="text-caption text-weight-bold text-white leading-none">{{ authStore.userNome }}</span>
             <span class="text-caption text-primary text-uppercase text-weight-bolder" style="font-size: 0.65rem;">
               {{ authStore.role }}
             </span>
           </div>
 
-          <q-btn flat round dense icon="logout" color="grey-4" @click="handleLogout">
+          <q-btn
+            flat
+            round
+            dense
+            icon="logout"
+            color="grey-4"
+            class="btn-logout"
+            @click="handleLogout"
+          >
             <q-tooltip>Sair do AppBus</q-tooltip>
           </q-btn>
         </div>
@@ -150,11 +135,92 @@
     </q-drawer>
 
     <!-- Conteúdo da Página -->
-    <q-page-container>
-      <div class="app-container-mobile q-pa-md">
+    <q-page-container class="app-page-container">
+      <div class="app-container-mobile q-pa-md q-pb-xl">
         <router-view />
       </div>
     </q-page-container>
+
+    <!-- Barra de Navegação Inferior Mobile-First (Bottom Bar) -->
+    <q-footer elevated class="bg-dark text-white app-bottom-bar">
+      <q-tabs
+        no-caps
+        dense
+        active-color="primary"
+        indicator-color="transparent"
+        class="text-grey-4 bottom-tabs"
+        align="justify"
+      >
+        <!-- Navegação do Aluno -->
+        <template v-if="authStore.isAluno">
+          <q-route-tab
+            to="/"
+            exact
+            icon="home"
+            label="Início"
+            class="nav-tab-item"
+          />
+          <q-route-tab
+            to="/aluno/qrcode"
+            icon="qr_code_scanner"
+            label="Embarcar"
+            class="nav-tab-item tab-embarcar"
+          />
+          <q-route-tab
+            to="/aluno/perfil"
+            icon="manage_accounts"
+            label="Perfil"
+            class="nav-tab-item"
+          />
+        </template>
+
+        <!-- Navegação do Motorista -->
+        <template v-else-if="authStore.isMotorista">
+          <q-route-tab
+            to="/"
+            exact
+            icon="home"
+            label="Início"
+            class="nav-tab-item"
+          />
+          <q-route-tab
+            to="/motorista"
+            icon="sports_motorsports"
+            label="Operação"
+            class="nav-tab-item"
+          />
+        </template>
+
+        <!-- Navegação do Gestor -->
+        <template v-else-if="authStore.isGestor">
+          <q-route-tab
+            to="/"
+            exact
+            icon="home"
+            label="Início"
+            class="nav-tab-item"
+          />
+          <q-route-tab
+            to="/admin/aprovacoes"
+            icon="how_to_reg"
+            label="Aprovações"
+            class="nav-tab-item"
+          />
+          <q-route-tab
+            to="/admin/frota"
+            icon="directions_bus"
+            label="Frota & Rotas"
+            class="nav-tab-item"
+          />
+          <q-route-tab
+            to="/admin/qrcode"
+            icon="qr_code_2"
+            label="Cartazes"
+            class="nav-tab-item"
+          />
+        </template>
+      </q-tabs>
+    </q-footer>
   </q-layout>
 </template>
 
@@ -195,9 +261,71 @@ const handleLogout = () => {
 </script>
 
 <style scoped lang="scss">
+.app-header {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(18, 24, 38, 0.98);
+  backdrop-filter: blur(8px);
+}
+
+.text-no-wrap {
+  white-space: nowrap;
+}
+
+.btn-logout {
+  transition: transform 0.2s ease, color 0.2s ease;
+  &:hover {
+    color: #C10015 !important;
+    transform: scale(1.05);
+  }
+}
+
+.app-page-container {
+  min-height: 100vh;
+}
+
+/* Barra de Navegação Inferior (Bottom Bar) */
+.app-bottom-bar {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(11, 15, 25, 0.96) !important;
+  backdrop-filter: blur(12px);
+  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
+}
+
+.bottom-tabs {
+  height: 60px;
+}
+
+.nav-tab-item {
+  min-height: 58px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  transition: all 0.2s ease;
+  padding: 4px 6px;
+
+  :deep(.q-tab__icon) {
+    font-size: 22px;
+    margin-bottom: 2px;
+  }
+
+  :deep(.q-tab__label) {
+    font-size: 0.70rem;
+    font-weight: 600;
+  }
+}
+
+/* Destaque especial do botão de ação principal (Embarcar) */
+.tab-embarcar {
+  :deep(.q-tab__icon) {
+    color: #F2C037;
+    filter: drop-shadow(0 0 6px rgba(242, 192, 55, 0.4));
+  }
+}
+
 .border-bottom {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
+
 .font-bold {
   font-weight: 700;
 }

@@ -23,7 +23,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or os.getenv('SECRET_KEY', 'appbus-i
 DEBUG = (os.getenv('DJANGO_DEBUG') or os.getenv('DEBUG', 'True')).lower() in ('true', '1', 't')
 
 allowed_hosts_raw = os.getenv('DJANGO_ALLOWED_HOSTS') or os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,web,backend,0.0.0.0')
-ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
+ALLOWED_HOSTS = ['*'] if DEBUG else [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
 
 # Application definition
 INSTALLED_APPS = [
@@ -133,4 +133,6 @@ SIMPLE_JWT = {
 # CORS Configuration
 cors_origins_raw = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_raw.split(',') if origin.strip()]
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
 CORS_ALLOW_CREDENTIALS = True
