@@ -19,6 +19,7 @@
   "devDependencies": {
     "@quasar/extras": "^1.18.0",
     "@quasar/vite-plugin": "^1.12.0",
+    "@vitejs/plugin-basic-ssl": "^1.2.0",
     "@vitejs/plugin-vue": "^5.0.4",
     "quasar": "^2.27.0",
     "sass": "^1.105.0",

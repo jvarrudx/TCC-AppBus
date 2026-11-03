@@ -204,7 +204,7 @@
           <div class="row items-center">
             <q-icon :name="viagemAtivaMotorista ? 'sports_motorsports' : 'play_arrow'" size="22px" class="q-mr-sm" />
             <span class="text-weight-bold">
-              {{ viagemAtivaMotorista ? 'Acessar Painel da Viagem em Andamento' : 'Iniciar Viagem de Hoje' }}
+              {{ viagemAtivaMotorista ? 'Gerenciar Viagem de Hoje' : 'Iniciar Viagem de Hoje' }}
             </span>
           </div>
           <q-icon name="arrow_forward" size="18px" />
@@ -247,7 +247,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onActivated } from 'vue'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '../stores/authStore'
 import api from '../boot/axios'
@@ -344,8 +344,12 @@ const fetchMetricasAdmin = async () => {
 const fetchViagemMotorista = async () => {
   if (!authStore.isMotorista) return
   try {
-    const res = await api.get('/viagens/ativa/')
-    viagemAtivaMotorista.value = res.data?.viagem || res.data || null
+    const res = await api.get('/operacao/viagem/ativa/')
+    if (res.data?.ativa && res.data?.viagem) {
+      viagemAtivaMotorista.value = res.data.viagem
+    } else {
+      viagemAtivaMotorista.value = null
+    }
   } catch (e) {
     viagemAtivaMotorista.value = null
   }
@@ -368,6 +372,12 @@ onMounted(() => {
   if (authStore.isGestor) {
     fetchMetricasAdmin()
   }
+  if (authStore.isMotorista) {
+    fetchViagemMotorista()
+  }
+})
+
+onActivated(() => {
   if (authStore.isMotorista) {
     fetchViagemMotorista()
   }

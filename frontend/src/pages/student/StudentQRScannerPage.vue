@@ -18,17 +18,31 @@
         Embarque Óptico
       </div>
 
-      <q-btn
-        flat
-        round
-        dense
-        :icon="torchActive ? 'flash_on' : 'flash_off'"
-        :color="torchActive ? 'primary' : 'grey-5'"
-        :disable="!hasTorch"
-        @click="toggleTorch"
-      >
-        <q-tooltip>{{ torchActive ? 'Desativar Lanterna' : 'Ativar Lanterna' }}</q-tooltip>
-      </q-btn>
+      <div class="row items-center q-gutter-x-xs">
+        <q-btn
+          v-if="hasMultipleCameras"
+          flat
+          round
+          dense
+          icon="cameraswitch"
+          color="primary"
+          @click="switchCamera"
+        >
+          <q-tooltip>Alternar Câmera</q-tooltip>
+        </q-btn>
+
+        <q-btn
+          flat
+          round
+          dense
+          :icon="torchActive ? 'flash_on' : 'flash_off'"
+          :color="torchActive ? 'primary' : 'grey-5'"
+          :disable="!hasTorch"
+          @click="toggleTorch"
+        >
+          <q-tooltip>{{ torchActive ? 'Desativar Lanterna' : 'Ativar Lanterna' }}</q-tooltip>
+        </q-btn>
+      </div>
     </div>
 
     <!-- 1. TELA VERDE: SUCESSO DE EMBARQUE -->
@@ -167,6 +181,34 @@
             <div class="text-subtitle1 text-weight-bold text-white">Validando Embarque...</div>
             <div class="text-caption text-grey-4">Conferindo autenticidade e status da viagem</div>
           </div>
+
+          <!-- Estado de Erro / Orientação amigável se a câmera falhar -->
+          <div v-else-if="cameraError" class="camera-error-overlay column items-center justify-center q-pa-md text-center">
+            <q-icon :name="cameraErrorIcon" size="48px" :color="cameraErrorColor" class="q-mb-sm" />
+            <div class="text-subtitle2 text-weight-bold text-white q-mb-xs">
+              {{ cameraErrorTitle }}
+            </div>
+            <div class="text-caption text-grey-4 q-mb-md" style="max-width: 320px;">
+              {{ cameraError }}
+            </div>
+            <q-btn
+              color="primary"
+              text-color="dark"
+              dense
+              class="q-px-md text-weight-bold"
+              icon="refresh"
+              label="Tentar Novamente"
+              no-caps
+              :loading="cameraIniciando"
+              @click="startScanner"
+            />
+          </div>
+
+          <!-- Estado de Conexão inicial com a câmera -->
+          <div v-else-if="cameraIniciando && !isScanning" class="camera-loading-overlay column items-center justify-center">
+            <q-spinner-dots color="primary" size="44px" />
+            <div class="text-caption text-grey-4 q-mt-sm">Iniciando câmera...</div>
+          </div>
         </div>
 
         <!-- ORIENTAÇÃO AO USUÁRIO -->
@@ -243,7 +285,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onBeforeUnmount, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { Html5Qrcode } from 'html5-qrcode'
@@ -267,6 +309,16 @@ const erroMensagem = ref('')
 const torchActive = ref(false)
 const hasTorch = ref(false)
 
+// Estados para controle de Câmeras e Diagnóstico
+const availableCameras = ref([])
+const currentCameraIndex = ref(0)
+const hasMultipleCameras = computed(() => availableCameras.value.length > 1)
+const cameraIniciando = ref(false)
+const cameraError = ref('')
+const cameraErrorTitle = ref('')
+const cameraErrorIcon = ref('videocam_off')
+const cameraErrorColor = ref('warning')
+
 // Estados para teste manual
 const manualUuid = ref('')
 const buscandoViagem = ref(false)
@@ -287,12 +339,38 @@ const formatDataHora = (isoStr) => {
   }
 }
 
-// Inicializa a câmera usando Html5Qrcode
+// Inicializa a câmera usando Html5Qrcode com fallback inteligente
 const startScanner = async () => {
   await nextTick()
+  cameraError.value = ''
+  cameraErrorTitle.value = ''
+  cameraIniciando.value = true
+
+  // 1. Verificação de Contexto Seguro (HTTPS ou localhost)
+  if (typeof window !== 'undefined' && !window.isSecureContext) {
+    cameraErrorIcon.value = 'lock'
+    cameraErrorColor.value = 'warning'
+    cameraErrorTitle.value = 'Conexão Insegura (HTTP)'
+    cameraError.value = 'O acesso à câmera pelo navegador exige HTTPS ou localhost. Acesse via https:// para autorizar o leitor óptico.'
+    cameraIniciando.value = false
+    isScanning.value = false
+    return
+  }
+
+  // 2. Parar leitor anterior se ainda estiver rodando
+  await stopScanner()
+
   try {
     if (!html5QrCode) {
       html5QrCode = new Html5Qrcode(SCANNER_ELEMENT_ID)
+    }
+
+    // 3. Enumeração prévia de câmeras conectadas
+    try {
+      const cams = await Html5Qrcode.getCameras()
+      availableCameras.value = cams || []
+    } catch (camErr) {
+      console.warn('Enumeração inicial de câmeras não permitida ou sem suporte prévio:', camErr)
     }
 
     const config = {
@@ -304,30 +382,107 @@ const startScanner = async () => {
       }
     }
 
-    await html5QrCode.start(
-      { facingMode: 'environment' },
-      config,
-      (decodedText) => {
-        onScanSuccess(decodedText)
-      },
-      () => {
-        // Quadro sem QR code, continua escaneando
+    // Estratégia de seleção:
+    // Se temos uma lista de câmeras detectadas e um índice válido:
+    let cameraTarget = null
+    if (availableCameras.value.length > 0) {
+      const selectedCam = availableCameras.value[currentCameraIndex.value]
+      if (selectedCam?.id) {
+        cameraTarget = selectedCam.id
       }
-    )
+    }
+
+    // Se não tiver ID específico, tenta primeiro ambiente (traseira)
+    if (!cameraTarget) {
+      cameraTarget = { facingMode: 'environment' }
+    }
+
+    try {
+      await html5QrCode.start(
+        cameraTarget,
+        config,
+        (decodedText) => onScanSuccess(decodedText),
+        () => {}
+      )
+    } catch (primaryErr) {
+      console.warn('Tentativa primária de câmera falhou. Iniciando fallback de dispositivo...', primaryErr)
+
+      // Fallback 1: se temos câmeras na lista, tenta o ID da primeira câmera
+      if (availableCameras.value.length > 0 && cameraTarget !== availableCameras.value[0].id) {
+        currentCameraIndex.value = 0
+        await html5QrCode.start(
+          availableCameras.value[0].id,
+          config,
+          (decodedText) => onScanSuccess(decodedText),
+          () => {}
+        )
+      } else {
+        // Fallback 2: Tenta modo 'user' (Webcam de notebook/desktop comum)
+        await html5QrCode.start(
+          { facingMode: 'user' },
+          config,
+          (decodedText) => onScanSuccess(decodedText),
+          () => {}
+        )
+      }
+    }
 
     isScanning.value = true
+    cameraIniciando.value = false
 
-    // Checa suporte a lanterna
+    // Atualiza capacidades da lanterna
     try {
       const capabilities = html5QrCode.getRunningTrackCapabilities()
       hasTorch.value = !!(capabilities && capabilities.torch)
     } catch (e) {
       hasTorch.value = false
     }
+
+    // Se ainda não tínhamos a lista de câmeras, busca após permissão concedida
+    if (availableCameras.value.length === 0) {
+      try {
+        const cams = await Html5Qrcode.getCameras()
+        availableCameras.value = cams || []
+      } catch (e) {
+        // ignora
+      }
+    }
   } catch (err) {
-    console.warn('Câmera indisponível ou permissão negada:', err)
+    console.error('Falha crítica ao iniciar câmera:', err)
     isScanning.value = false
+    cameraIniciando.value = false
+
+    const errStr = (err?.message || err?.name || String(err)).toLowerCase()
+
+    if (errStr.includes('notallowed') || errStr.includes('permission')) {
+      cameraErrorIcon.value = 'no_photography'
+      cameraErrorColor.value = 'negative'
+      cameraErrorTitle.value = 'Permissão de Câmera Negada'
+      cameraError.value = 'O navegador não tem permissão para acessar a câmera. Permita o uso da câmera nas configurações ou ícone de cadeado da barra de navegação.'
+    } else if (errStr.includes('notfound') || errStr.includes('devicesnotfound')) {
+      cameraErrorIcon.value = 'videocam_off'
+      cameraErrorColor.value = 'warning'
+      cameraErrorTitle.value = 'Nenhuma Câmera Detectada'
+      cameraError.value = 'Não foi possível encontrar uma webcam ou câmera conectada neste aparelho.'
+    } else if (errStr.includes('notreadable') || errStr.includes('in use') || errStr.includes('trackstart')) {
+      cameraErrorIcon.value = 'warning'
+      cameraErrorColor.value = 'warning'
+      cameraErrorTitle.value = 'Câmera em Uso'
+      cameraError.value = 'A câmera já está sendo utilizada por outro aplicativo ou aba. Feche outros apps e tente novamente.'
+    } else {
+      cameraErrorIcon.value = 'error_outline'
+      cameraErrorColor.value = 'negative'
+      cameraErrorTitle.value = 'Câmera Indisponível'
+      cameraError.value = 'Não foi possível inicializar o dispositivo de vídeo. Você pode utilizar a entrada manual de UUID abaixo para testes.'
+    }
   }
+}
+
+// Alterna entre câmeras disponíveis (ex: frontal <-> traseira)
+const switchCamera = async () => {
+  if (availableCameras.value.length <= 1 || cameraIniciando.value) return
+  currentCameraIndex.value = (currentCameraIndex.value + 1) % availableCameras.value.length
+  await startScanner()
 }
 
 const stopScanner = async () => {
@@ -574,6 +729,21 @@ onBeforeUnmount(async () => {
   bottom: 0;
   background: rgba(11, 15, 25, 0.92);
   z-index: 10;
+}
+
+.camera-error-overlay,
+.camera-loading-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(11, 15, 25, 0.95);
+  z-index: 9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
 }
 
 /* Telas cheias de feedback (Sucesso / Erro) */
