@@ -1,12 +1,12 @@
 // Quasar SCSS (& SASS) Variables
 // AppBus - Identidade Visual Mobile-First: Modo Escuro & Amarelo Ônibus Escolar
 
-$primary   : #F2C037; // Amarelo Ônibus Escolar de alto impacto
+$primary   : #F59E0B; // Amarelo Ônibus de alto impacto / Âmbar Dourado
 $secondary : #38BDF8; // Azul Ciano Suave para detalhes secundários
-$accent    : #F59E0B; // Âmbar para acentos e avisos operacionais
+$accent    : #FBBF24; // Âmbar claro para acentos e avisos operacionais
 
-$dark      : #121212; // Superfície de cartões e modais no modo escuro
-$dark-page : #0B0F19; // Fundo global ultra-escuro (Deep OLED Dark)
+$dark      : #111827; // Superfície de cartões e modais (Tailwind Slate/Gray-900)
+$dark-page : #090D16; // Fundo global ultra-escuro (Deep OLED Dark)
 
 $positive  : #10B981; // Verde esmeralda para validações e embarques concluídos
 $negative  : #EF4444; // Vermelho intenso para erros e recusas

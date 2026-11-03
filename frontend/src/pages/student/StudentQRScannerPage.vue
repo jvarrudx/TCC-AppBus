@@ -88,16 +88,14 @@
             <q-btn
               color="primary"
               text-color="dark"
-              class="full-width q-py-sm text-weight-bold"
+              class="full-width q-py-sm btn-bus-primary text-weight-bold"
               label="Concluir e Voltar ao Início"
               icon="home"
               no-caps
               to="/"
             />
             <q-btn
-              flat
-              color="grey-4"
-              class="full-width q-py-sm"
+              class="full-width q-py-sm btn-bus-secondary"
               label="Efetuar Outro Embarque"
               icon="refresh"
               no-caps
@@ -129,18 +127,14 @@
 
           <div class="q-mt-md q-gutter-y-sm">
             <q-btn
-              color="negative"
-              text-color="white"
-              class="full-width q-py-sm text-weight-bold"
+              class="full-width q-py-sm btn-bus-primary text-weight-bold"
               label="Tentar Novamente"
               icon="refresh"
               no-caps
               @click="resetScanner"
             />
             <q-btn
-              flat
-              color="grey-4"
-              class="full-width q-py-sm"
+              class="full-width q-py-sm btn-bus-secondary"
               label="Voltar ao Início"
               icon="home"
               no-caps

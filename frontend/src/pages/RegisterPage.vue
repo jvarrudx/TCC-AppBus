@@ -554,10 +554,10 @@ onMounted(() => {
 }
 
 .brand-badge {
-  background: #F2C037;
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
   padding: 10px 14px;
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(242, 192, 55, 0.35);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.35);
   display: inline-flex;
   align-items: center;
   transition: transform 0.2s ease;

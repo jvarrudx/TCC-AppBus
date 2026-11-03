@@ -1,7 +1,17 @@
-// AppBus Global Styles - Mobile-First & Dark High-Contrast
+// AppBus Global Styles - Design System Mobile-First (OLED Dark & Amber Gold)
+
+:root {
+  --app-bg: #090D16;
+  --app-surface: #111827;
+  --app-surface-elevated: #1E293B;
+  --app-border-subtle: rgba(255, 255, 255, 0.07);
+  --app-border-highlight: rgba(245, 158, 11, 0.35);
+  --primary-gradient: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  --primary-glow: 0 4px 20px rgba(245, 158, 11, 0.28);
+}
 
 html, body {
-  background-color: #0B0F19;
+  background-color: var(--app-bg);
   color: #F8FAFC;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -15,18 +25,18 @@ html, body {
 
 // Estilização Quasar no Modo Escuro Padrão
 .body--dark {
-  background: #0B0F19 !important;
+  background: var(--app-bg) !important;
   color: #F8FAFC;
 }
 
 // Scrollbars sutis e escuras
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #0B0F19;
+  background: var(--app-bg);
 }
 
 ::-webkit-scrollbar-thumb {
@@ -40,42 +50,196 @@ html, body {
 
 // Utilitários para Mobile-First
 .app-container-mobile {
-  max-width: 480px;
+  max-width: 500px;
   margin: 0 auto;
-  min-height: 100vh;
+  width: 100%;
   display: flex;
   flex-direction: column;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom, 16px));
 }
 
-// Botões Primários com Amarelo de Destaque e Texto Escuro de Alto Contraste
+// =========================================================================
+// SISTEMA DE BOTÕES PREMIUM (Zero Botão Genérico)
+// =========================================================================
+
+// Botão Primário Hero: Amarelo/Âmbar Gradiente de Alto Impacto
 .q-btn.bg-primary, .btn-bus-primary {
+  background: var(--primary-gradient) !important;
   color: #0B0F19 !important;
   font-weight: 700 !important;
-  letter-spacing: 0.025em;
+  letter-spacing: 0.015em;
   text-transform: none !important;
-  border-radius: 12px !important;
-  transition: all 0.2s ease-in-out;
+  border-radius: 14px !important;
+  box-shadow: var(--primary-glow) !important;
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.15s ease, filter 0.15s ease !important;
+  min-height: 44px;
 
   &:hover {
-    filter: brightness(1.08);
-    transform: translateY(-1px);
-    box-shadow: 0 4px 14px rgba(242, 192, 55, 0.35);
+    filter: brightness(1.06);
+    box-shadow: 0 6px 24px rgba(245, 158, 11, 0.38) !important;
   }
 
   &:active {
-    transform: translateY(0);
+    transform: scale(0.97) !important;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.2) !important;
   }
 }
 
-// Cartões no Modo Escuro
-.q-card.dark-card {
-  background: #121826 !important;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 16px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.5);
+// Botão Secundário Glass / Outline
+.btn-bus-secondary {
+  background: rgba(255, 255, 255, 0.04) !important;
+  border: 1px solid rgba(255, 255, 255, 0.12) !important;
+  color: #F8FAFC !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.01em;
+  text-transform: none !important;
+  border-radius: 14px !important;
+  backdrop-filter: blur(8px);
+  transition: all 0.2s ease !important;
+  min-height: 44px;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08) !important;
+    border-color: rgba(245, 158, 11, 0.4) !important;
+    color: #FFFFFF !important;
+  }
+
+  &:active {
+    transform: scale(0.97) !important;
+  }
 }
 
-// Badges de Status
+// Botão Destrutivo / Risco Contido
+.btn-bus-destructive {
+  background: rgba(239, 68, 68, 0.1) !important;
+  border: 1px solid rgba(239, 68, 68, 0.3) !important;
+  color: #EF4444 !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  border-radius: 14px !important;
+  transition: all 0.2s ease !important;
+  min-height: 44px;
+
+  &:hover {
+    background: rgba(239, 68, 68, 0.2) !important;
+    border-color: #EF4444 !important;
+    color: #FCA5A5 !important;
+  }
+
+  &:active {
+    transform: scale(0.97) !important;
+  }
+}
+
+// Botão Ghost / Terciário Minimalista
+.btn-bus-ghost {
+  background: transparent !important;
+  border: none !important;
+  color: #94A3B8 !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  border-radius: 10px !important;
+  transition: all 0.2s ease !important;
+
+  &:hover {
+    color: #F8FAFC !important;
+    background: rgba(255, 255, 255, 0.05) !important;
+  }
+
+  &:active {
+    transform: scale(0.97) !important;
+  }
+}
+
+// =========================================================================
+// CARTÕES, SUPERFÍCIES & GLASSMORPHISM
+// =========================================================================
+
+.q-card.dark-card {
+  background: var(--app-surface) !important;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 16px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+// Action Card com affordance interativo
+.action-card {
+  cursor: pointer;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 16px;
+  transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.2s ease, box-shadow 0.2s ease;
+  user-select: none;
+
+  &:hover {
+    transform: translateY(-2px);
+    border-color: var(--app-border-highlight);
+    box-shadow: 0 8px 24px -4px rgba(245, 158, 11, 0.15);
+  }
+
+  &:active {
+    transform: scale(0.985);
+  }
+}
+
+// Painel Glassmorphic
+.glass-panel {
+  background: rgba(17, 24, 39, 0.82) !important;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--app-border-subtle);
+}
+
+// =========================================================================
+// HIERARQUIA TIPOGRÁFICA
+// =========================================================================
+
+.text-hero {
+  font-size: 1.5rem;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+}
+
+.text-card-title {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.text-body-subtle {
+  font-size: 0.875rem;
+  color: #CBD5E1;
+  line-height: 1.5;
+}
+
+.text-meta {
+  font-size: 0.75rem;
+  color: #94A3B8;
+  letter-spacing: 0.01em;
+}
+
+// =========================================================================
+// FORMULÁRIOS & CAMPOS DE ENTRADA (FEEDBACK DE FOCO ERGONÔMICO)
+// =========================================================================
+
+.q-field--outlined .q-field__control {
+  border-radius: 14px !important;
+  background: rgba(17, 24, 39, 0.6) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.q-field--outlined.q-field--focused .q-field__control {
+  border-color: #F59E0B !important;
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22) !important;
+}
+
+// =========================================================================
+// BADGES & MICROINTERAÇÕES
+// =========================================================================
+
 .badge-role {
   padding: 4px 10px;
   border-radius: 9999px;
@@ -83,4 +247,27 @@ html, body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+}
+
+.badge-live-pulse {
+  position: relative;
+  &::before {
+    content: '';
+    position: absolute;
+    top: -2px;
+    left: -2px;
+    right: -2px;
+    bottom: -2px;
+    border-radius: inherit;
+    background: inherit;
+    opacity: 0.4;
+    animation: livePulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    z-index: -1;
+  }
+}
+
+@keyframes livePulse {
+  0% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.15); opacity: 0; }
+  100% { transform: scale(1); opacity: 0; }
 }

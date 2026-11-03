@@ -18,7 +18,7 @@
         Mural de Avisos
       </div>
 
-      <div class="row items-center q-gutter-x-xs">
+      <div class="row items-center q-gutter-x-sm">
         <q-btn
           flat
           round
@@ -39,8 +39,8 @@
           dense
           no-caps
           icon="add"
-          label="Novo"
-          class="q-px-sm text-weight-bold"
+          label="Novo Comunicado"
+          class="q-px-sm btn-bus-primary text-weight-bold"
           @click="abrirDialogNovoAviso"
         >
           <q-tooltip>Publicar Novo Comunicado</q-tooltip>
@@ -73,11 +73,11 @@
         class="dark-card aviso-card q-pa-md"
         :class="`tipo-border-${aviso.tipo.toLowerCase()}`"
       >
-        <!-- CABEÇALHO DO COMUNICADO: AUTOR + HORÁRIO + TIPO -->
+        <!-- CABEÇALHO DO COMUNICADO: AUTOR + HORÁRIO + TIPO + AÇÕES CONTEXTUAIS -->
         <div class="row items-center justify-between q-mb-xs">
           <div class="row items-center q-gutter-x-sm">
             <q-avatar
-              size="36px"
+              size="38px"
               :color="getAvatarBgColor(aviso.autor_papel)"
               :text-color="aviso.autor_papel === 'Motorista' ? 'dark' : 'white'"
             >
@@ -88,7 +88,7 @@
               <div class="text-subtitle2 text-weight-bolder text-white leading-tight">
                 {{ aviso.autor_nome }}
               </div>
-              <div class="row items-center q-gutter-x-xs text-caption text-grey-5" style="font-size: 0.72rem;">
+              <div class="row items-center q-gutter-x-xs q-mt-xs">
                 <q-badge
                   dense
                   :color="aviso.autor_papel === 'Motorista' ? 'primary' : 'secondary'"
@@ -98,55 +98,87 @@
                   {{ aviso.autor_papel }}
                 </q-badge>
 
-                <span v-if="aviso.rota_nome" class="text-grey-4">
-                  • Linha: <strong class="text-white">{{ aviso.rota_nome }}</strong>
-                </span>
-                <span v-else class="text-grey-4">• Geral (Todas as Linhas)</span>
+                <q-chip
+                  v-if="aviso.rota_nome"
+                  dense
+                  dark
+                  color="grey-9"
+                  text-color="primary"
+                  icon="directions_bus"
+                  size="sm"
+                  class="text-weight-bold"
+                >
+                  {{ aviso.rota_nome }}
+                </q-chip>
+                <q-chip
+                  v-else
+                  dense
+                  dark
+                  color="grey-9"
+                  text-color="grey-4"
+                  size="sm"
+                >
+                  Geral
+                </q-chip>
               </div>
             </div>
           </div>
 
-          <div class="column items-end">
-            <q-badge
-              :color="getTipoBadgeColor(aviso.tipo)"
-              :text-color="aviso.tipo === 'ATRASO' || aviso.tipo === 'GERAL' ? 'dark' : 'white'"
-              class="text-weight-bolder q-px-sm q-py-xs"
-            >
-              <q-icon :name="getTipoIcon(aviso.tipo)" size="13px" class="q-mr-xs" />
-              {{ aviso.tipo_display || aviso.tipo }}
-            </q-badge>
+          <div class="row items-center q-gutter-x-xs">
+            <div class="column items-end">
+              <q-badge
+                :color="getTipoBadgeColor(aviso.tipo)"
+                :text-color="aviso.tipo === 'ATRASO' || aviso.tipo === 'GERAL' ? 'dark' : 'white'"
+                class="text-weight-bolder q-px-sm q-py-xs"
+              >
+                <q-icon :name="getTipoIcon(aviso.tipo)" size="13px" class="q-mr-xs" />
+                {{ aviso.tipo_display || aviso.tipo }}
+              </q-badge>
 
-            <span class="text-caption text-grey-5 q-mt-xs" style="font-size: 0.70rem;">
-              {{ formatDataHora(aviso.criado_em) }}
-            </span>
+              <span class="text-caption text-grey-5 q-mt-xs" style="font-size: 0.70rem;">
+                {{ formatDataHora(aviso.criado_em) }}
+              </span>
+            </div>
+
+            <!-- MENU CONTEXTUAL PARA GERENCIAR (SEM BOTÕES GIGANTES NO CORPO) -->
+            <q-btn
+              v-if="podeGerenciarAviso(aviso)"
+              flat
+              round
+              dense
+              size="sm"
+              icon="more_vert"
+              color="grey-5"
+              class="q-ml-xs"
+            >
+              <q-menu dark auto-close class="bg-dark text-white border-subtle">
+                <q-list dense style="min-width: 150px">
+                  <q-item
+                    clickable
+                    @click="confirmarInativacao(aviso)"
+                    class="text-negative items-center"
+                    :disable="inativandoId === aviso.id"
+                  >
+                    <q-item-section avatar>
+                      <q-icon name="delete_outline" size="18px" color="negative" />
+                    </q-item-section>
+                    <q-item-section class="text-weight-medium">Inativar Aviso</q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+              <q-tooltip>Opções do aviso</q-tooltip>
+            </q-btn>
           </div>
         </div>
 
         <q-separator dark class="q-my-sm border-subtle" />
 
         <!-- CONTEÚDO DO COMUNICADO -->
-        <div class="text-subtitle1 text-weight-bold text-white q-mb-xs">
+        <div class="text-card-title text-white q-mb-xs">
           {{ aviso.titulo }}
         </div>
         <div class="text-body2 text-grey-3 message-content leading-relaxed">
           {{ aviso.mensagem }}
-        </div>
-
-        <!-- AÇÕES DO AUTOR OU GESTOR (INATIVAR / EXCLUIR) -->
-        <div v-if="podeGerenciarAviso(aviso)" class="row justify-end q-mt-sm">
-          <q-btn
-            flat
-            dense
-            color="grey-5"
-            size="sm"
-            icon="delete_outline"
-            label="Inativar Comunicado"
-            no-caps
-            :loading="inativandoId === aviso.id"
-            @click="confirmarInativacao(aviso)"
-          >
-            <q-tooltip>Encerrar ou inativar este aviso do mural</q-tooltip>
-          </q-btn>
         </div>
       </q-card>
     </div>
@@ -581,29 +613,35 @@ onMounted(async () => {
 }
 
 .aviso-card {
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
-  border-left: 4px solid transparent;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+  border-radius: 16px;
+  background: var(--app-surface) !important;
+  border: 1px solid rgba(255, 255, 255, 0.07);
 
   &:hover {
-    transform: translateY(-1px);
-    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+    transform: translateY(-2px);
+    box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
   }
 }
 
 .tipo-border-urgente {
-  border-left: 5px solid #C10015 !important;
+  border-left: 4px solid #EF4444 !important;
+  box-shadow: -2px 0 14px rgba(239, 68, 68, 0.2);
 }
 
 .tipo-border-atraso {
-  border-left: 5px solid #F2C037 !important;
+  border-left: 4px solid #F59E0B !important;
+  box-shadow: -2px 0 14px rgba(245, 158, 11, 0.2);
 }
 
 .tipo-border-manutencao {
-  border-left: 5px solid #31CCEC !important;
+  border-left: 4px solid #0EA5E9 !important;
+  box-shadow: -2px 0 14px rgba(14, 165, 233, 0.2);
 }
 
 .tipo-border-geral {
-  border-left: 5px solid #21BA45 !important;
+  border-left: 4px solid #10B981 !important;
+  box-shadow: -2px 0 14px rgba(16, 185, 129, 0.2);
 }
 
 .border-subtle {

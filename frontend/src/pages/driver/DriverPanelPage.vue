@@ -27,13 +27,13 @@
     </div>
 
     <!-- Header da Página do Motorista -->
-    <div class="row items-center justify-between q-mb-md">
-      <div>
-        <h1 class="text-h6 text-weight-bolder text-white q-my-none flex items-center">
-          <q-icon name="directions_bus" color="primary" size="26px" class="q-mr-xs" />
-          Painel do Motorista
+    <div class="row items-center justify-between q-mb-md no-wrap">
+      <div class="col ellipsis q-pr-sm">
+        <h1 class="text-subtitle1 text-weight-bolder text-white q-my-none flex items-center ellipsis">
+          <q-icon name="sports_motorsports" color="primary" size="24px" class="q-mr-xs" />
+          <span>Painel do Motorista</span>
         </h1>
-        <p class="text-caption text-grey-4 q-mb-none">
+        <p class="text-caption text-grey-4 q-mb-none ellipsis">
           Operação de Viagem & Validação de Embarques
         </p>
       </div>
@@ -41,9 +41,9 @@
       <q-badge
         :color="isOnline ? 'positive' : 'warning'"
         :text-color="isOnline ? 'white' : 'dark'"
-        class="q-pa-xs text-weight-bold"
+        class="q-px-sm q-py-xs text-weight-bold flex-shrink-0"
       >
-        <q-icon :name="isOnline ? 'wifi' : 'wifi_off'" size="14px" class="q-mr-xs" />
+        <q-icon :name="isOnline ? 'wifi' : 'wifi_off'" size="13px" class="q-mr-xs" />
         {{ isOnline ? 'Online' : 'Offline' }}
       </q-badge>
     </div>
@@ -75,11 +75,16 @@
     <!-- ========================================================================= -->
     <!-- ESTADO 1: NENHUMA VIAGEM EM ANDAMENTO -> TELA DE INICIAR VIAGEM           -->
     <!-- ========================================================================= -->
-    <div v-else-if="!viagemAtiva">
-      <q-card class="dark-card q-pa-md">
-        <div class="text-subtitle1 text-weight-bold text-primary flex items-center q-mb-xs">
-          <q-icon name="play_circle" size="22px" class="q-mr-xs" />
-          Iniciar Nova Viagem
+    <div v-else-if="!viagemAtiva" class="start-trip-container">
+      <q-card class="dark-card q-pa-md start-trip-card">
+        <div class="row items-center justify-between q-mb-xs">
+          <div class="text-subtitle1 text-weight-bold text-primary flex items-center">
+            <q-icon name="play_circle" size="22px" class="q-mr-xs" />
+            Iniciar Nova Viagem
+          </div>
+          <q-badge color="grey-8" text-color="primary" class="text-weight-bold">
+            Nova Linha
+          </q-badge>
         </div>
         <p class="text-caption text-grey-4 q-mb-md">
           Selecione a rota planejada e o veículo para abrir o período de embarque estudantil.
@@ -99,18 +104,38 @@
               option-label="label"
               emit-value
               map-options
-              filled
+              outlined
               dark
-              color="primary"
-              bg-color="dark"
               dense
-              popup-content-class="bg-dark text-white"
+              color="primary"
+              popup-content-class="bg-dark text-white select-dropdown"
               :loading="loadingRotas"
               placeholder="Selecione a rota"
               :rules="[val => !!val || 'Selecione uma rota obrigatória']"
+              class="select-ellipsis"
             >
               <template v-slot:prepend>
                 <q-icon name="alt_route" color="primary" />
+              </template>
+              <template v-slot:selected-item="scope">
+                <span class="ellipsis select-single-line" :title="scope.opt.nomeCompleto || scope.opt.label">
+                  {{ scope.opt.selectedLabel || scope.opt.label }}
+                </span>
+              </template>
+              <template v-slot:option="scope">
+                <q-item v-bind="scope.itemProps" class="select-option-item">
+                  <q-item-section avatar>
+                    <q-icon name="alt_route" color="primary" size="18px" />
+                  </q-item-section>
+                  <q-item-section>
+                    <q-item-label class="ellipsis text-white text-weight-medium">
+                      {{ scope.opt.nomeCompleto || scope.opt.label }}
+                    </q-item-label>
+                    <q-item-label caption class="text-grey-4 ellipsis" style="font-size: 0.72rem;">
+                      {{ scope.opt.sublabel }}
+                    </q-item-label>
+                  </q-item-section>
+                </q-item>
               </template>
             </q-select>
           </div>
@@ -127,75 +152,99 @@
               option-label="label"
               emit-value
               map-options
-              filled
+              outlined
               dark
-              color="primary"
-              bg-color="dark"
               dense
-              popup-content-class="bg-dark text-white"
+              color="primary"
+              popup-content-class="bg-dark text-white select-dropdown"
               :loading="loadingOnibus"
               placeholder="Selecione o veículo"
               :rules="[val => !!val || 'Selecione um ônibus obrigatório']"
+              class="select-ellipsis"
             >
               <template v-slot:prepend>
                 <q-icon name="directions_bus" color="primary" />
               </template>
+              <template v-slot:selected-item="scope">
+                <span class="ellipsis select-single-line" :title="scope.opt.modeloCompleto ? `${scope.opt.placa} - ${scope.opt.modeloCompleto}` : scope.opt.label">
+                  {{ scope.opt.selectedLabel || scope.opt.label }}
+                </span>
+              </template>
+              <template v-slot:option="scope">
+                <q-item v-bind="scope.itemProps" class="select-option-item">
+                  <q-item-section avatar>
+                    <q-icon name="directions_bus" color="primary" size="18px" />
+                  </q-item-section>
+                  <q-item-section>
+                    <q-item-label class="ellipsis text-white text-weight-medium">
+                      {{ scope.opt.label }}
+                    </q-item-label>
+                    <q-item-label caption class="text-grey-4 ellipsis" style="font-size: 0.72rem;">
+                      {{ scope.opt.sublabel }}
+                    </q-item-label>
+                  </q-item-section>
+                </q-item>
+              </template>
             </q-select>
           </div>
 
-          <!-- Sentido da Viagem (Ida vs Volta) - Botões Grandes de Toque -->
+          <!-- Sentido da Viagem (Ida vs Volta) - Segmented Control Mobile Ergonômico -->
           <div>
             <label class="text-caption text-weight-bold text-grey-3 block q-mb-xs">
               Sentido do Trajeto *
             </label>
-            <div class="row q-col-gutter-sm">
+            <div class="row q-col-gutter-xs sentido-grid">
               <div class="col-6">
-                <q-btn
-                  :color="formIniciar.sentido === 'ida' ? 'primary' : 'grey-9'"
-                  :text-color="formIniciar.sentido === 'ida' ? 'dark' : 'grey-4'"
-                  :outline="formIniciar.sentido !== 'ida'"
-                  class="full-width q-py-md text-weight-bold btn-touch"
-                  no-caps
+                <div
+                  class="sentido-card"
+                  :class="{ 'sentido-card--active': formIniciar.sentido === 'ida' }"
                   @click="formIniciar.sentido = 'ida'"
                 >
-                  <q-icon name="arrow_forward" size="20px" class="q-mr-xs" />
-                  <div class="column text-left">
-                    <span class="text-subtitle2 leading-tight">IDA</span>
-                    <span class="text-caption" style="font-size: 0.68rem;">Bairro ➔ Faculdade</span>
+                  <div class="row items-center no-wrap full-width">
+                    <div class="sentido-icon-circle q-mr-xs">
+                      <q-icon name="arrow_forward" size="17px" />
+                    </div>
+                    <div class="column overflow-hidden full-width">
+                      <span class="sentido-label">IDA</span>
+                      <span class="sentido-sublabel ellipsis">Bairro ➔ Campus</span>
+                    </div>
                   </div>
-                </q-btn>
+                </div>
               </div>
 
               <div class="col-6">
-                <q-btn
-                  :color="formIniciar.sentido === 'volta' ? 'primary' : 'grey-9'"
-                  :text-color="formIniciar.sentido === 'volta' ? 'dark' : 'grey-4'"
-                  :outline="formIniciar.sentido !== 'volta'"
-                  class="full-width q-py-md text-weight-bold btn-touch"
-                  no-caps
+                <div
+                  class="sentido-card"
+                  :class="{ 'sentido-card--active': formIniciar.sentido === 'volta' }"
                   @click="formIniciar.sentido = 'volta'"
                 >
-                  <q-icon name="arrow_back" size="20px" class="q-mr-xs" />
-                  <div class="column text-left">
-                    <span class="text-subtitle2 leading-tight">VOLTA</span>
-                    <span class="text-caption" style="font-size: 0.68rem;">Faculdade ➔ Bairro</span>
+                  <div class="row items-center no-wrap full-width">
+                    <div class="sentido-icon-circle q-mr-xs">
+                      <q-icon name="arrow_back" size="17px" />
+                    </div>
+                    <div class="column overflow-hidden full-width">
+                      <span class="sentido-label">VOLTA</span>
+                      <span class="sentido-sublabel ellipsis">Campus ➔ Bairro</span>
+                    </div>
                   </div>
-                </q-btn>
+                </div>
               </div>
             </div>
           </div>
 
           <!-- Botão Tático de Iniciar Viagem -->
-          <q-btn
-            type="submit"
-            color="primary"
-            text-color="dark"
-            class="full-width q-py-md btn-bus-primary text-weight-bolder text-h6 q-mt-lg"
-            :loading="startingViagem"
-            icon="play_arrow"
-            label="INICIAR VIAGEM"
-            no-caps
-          />
+          <div class="q-pt-xs">
+            <q-btn
+              type="submit"
+              color="primary"
+              text-color="dark"
+              class="full-width btn-bus-primary text-weight-bolder btn-iniciar-viagem"
+              :loading="startingViagem"
+              icon="play_arrow"
+              label="INICIAR VIAGEM"
+              no-caps
+            />
+          </div>
         </q-form>
       </q-card>
     </div>
@@ -229,7 +278,7 @@
           </q-btn>
         </div>
 
-        <div class="text-h6 text-weight-bolder text-white">
+        <div class="text-h6 text-weight-bolder text-white" style="word-break: break-word; line-height: 1.25;">
           {{ viagemAtiva.rota_nome }}
         </div>
 
@@ -307,9 +356,7 @@
         <!-- Botão para Concluir Viagem -->
         <div class="q-mt-md">
           <q-btn
-            outline
-            color="negative"
-            class="full-width q-py-sm text-weight-bold"
+            class="full-width q-py-sm btn-bus-destructive text-weight-bold"
             icon="stop_circle"
             label="CONCLUIR OPERAÇÃO DA VIAGEM"
             no-caps
@@ -459,19 +506,82 @@ const formIniciar = reactive({
 // Chave do LocalStorage para contingência offline
 const OFFLINE_STORAGE_KEY = 'appbus_offline_checkins'
 
-// Options computadas para os seletores
+const truncate = (text, max = 28) => {
+  if (!text) return ''
+  return text.length > max ? text.slice(0, max).trim() + '…' : text
+}
+
+// Options computadas para os seletores com limitação responsiva por tamanho de tela
 const rotasOptions = computed(() => {
-  return rotas.value.map(r => ({
-    id: r.id,
-    label: `${r.nome} (${r.paradas ? r.paradas.length : 0} paradas)`
-  }))
+  const width = $q.screen.width
+  // Limitação responsiva para garantir que nunca quebre ou transborde a tela:
+  // - Telas ultra compactas (< 360px): 14 chars no nome
+  // - Telas mobile normais (< 600px): 20 chars no nome
+  // - Tablets (< 1024px): 35 chars no nome
+  // - Desktops (>= 1024px): 60 chars no nome
+  let maxChars = 60
+  let isMobileCompact = false
+
+  if (width < 360) {
+    maxChars = 14
+    isMobileCompact = true
+  } else if (width < 600) {
+    maxChars = 20
+    isMobileCompact = true
+  } else if (width < 1024) {
+    maxChars = 35
+  }
+
+  return rotas.value.map(r => {
+    const paradasCount = r.paradas ? r.paradas.length : 0
+    const nomeTruncado = truncate(r.nome, maxChars)
+    const suffix = isMobileCompact
+      ? `(${paradasCount}p)`
+      : `(${paradasCount} ${paradasCount === 1 ? 'parada' : 'paradas'})`
+
+    return {
+      id: r.id,
+      nomeCompleto: r.nome,
+      label: `${nomeTruncado} ${suffix}`,
+      selectedLabel: `${nomeTruncado}`,
+      sublabel: `${r.nome} • ${paradasCount} ${paradasCount === 1 ? 'parada' : 'paradas'}`
+    }
+  })
 })
 
 const onibusOptions = computed(() => {
-  return frotaOnibus.value.map(o => ({
-    id: o.id,
-    label: `${o.placa} - ${o.modelo_nome || 'Ônibus'} (${o.capacidade} lugares)`
-  }))
+  const width = $q.screen.width
+  // Limitação responsiva para modelo do ônibus:
+  // - Telas ultra compactas (< 360px): 10 chars no modelo
+  // - Telas mobile normais (< 600px): 16 chars no modelo
+  // - Tablets (< 1024px): 28 chars no modelo
+  // - Desktops (>= 1024px): 50 chars no modelo
+  let maxModeloChars = 50
+  let isMobileCompact = false
+
+  if (width < 360) {
+    maxModeloChars = 10
+    isMobileCompact = true
+  } else if (width < 600) {
+    maxModeloChars = 16
+    isMobileCompact = true
+  } else if (width < 1024) {
+    maxModeloChars = 28
+  }
+
+  return frotaOnibus.value.map(o => {
+    const modeloTruncado = truncate(o.modelo_nome || 'Ônibus', maxModeloChars)
+    const lugSuffix = isMobileCompact ? `${o.capacidade}l` : `${o.capacidade} lug`
+
+    return {
+      id: o.id,
+      placa: o.placa,
+      modeloCompleto: o.modelo_nome,
+      label: `${o.placa} • ${modeloTruncado} (${lugSuffix})`,
+      selectedLabel: `${o.placa} • ${modeloTruncado}`,
+      sublabel: `${o.capacidade} lugares • ${o.modelo_nome || 'Veículo da frota'}`
+    }
+  })
 })
 
 // Métricas computadas considerando check-ins offline locais
@@ -870,8 +980,14 @@ onUnmounted(() => {
 
 <style scoped lang="scss">
 .driver-panel {
-  max-width: 600px;
+  max-width: 540px;
   margin: 0 auto;
+  padding-bottom: 96px;
+}
+
+.start-trip-card {
+  border-radius: 18px;
+  background: var(--app-surface) !important;
 }
 
 .offline-banner {
@@ -887,9 +1003,86 @@ onUnmounted(() => {
   border-radius: 8px;
 }
 
-.btn-touch {
-  border-radius: 12px;
-  min-height: 58px;
+/* Seletor Ergonômico de Sentido (Segmented Cards) */
+.sentido-grid {
+  margin-top: 2px;
+}
+
+.sentido-card {
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 14px;
+  padding: 10px 10px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.07);
+    border-color: rgba(245, 158, 11, 0.4);
+  }
+
+  &:active {
+    transform: scale(0.97);
+  }
+
+  &--active {
+    background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%) !important;
+    border-color: #F59E0B !important;
+    color: #0B0F19 !important;
+    box-shadow: 0 4px 16px rgba(245, 158, 11, 0.35) !important;
+
+    .sentido-icon-circle {
+      background: rgba(0, 0, 0, 0.2);
+      color: #0B0F19;
+    }
+
+    .sentido-label {
+      color: #0B0F19 !important;
+      font-weight: 800;
+    }
+
+    .sentido-sublabel {
+      color: rgba(11, 15, 25, 0.85) !important;
+      font-weight: 600;
+    }
+  }
+}
+
+.sentido-icon-circle {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #F59E0B;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+}
+
+.sentido-label {
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #F8FAFC;
+}
+
+.sentido-sublabel {
+  font-size: 0.68rem;
+  color: #94A3B8;
+  line-height: 1.2;
+}
+
+.btn-iniciar-viagem {
+  height: 50px;
+  font-size: 1rem;
+  letter-spacing: 0.02em;
+  border-radius: 14px;
 }
 
 .kpi-card {
@@ -923,7 +1116,50 @@ onUnmounted(() => {
   }
 }
 
-.border-danger {
-  border: 1px solid rgba(193, 0, 21, 0.4);
+.select-ellipsis {
+  :deep(.q-field__native) {
+    flex-wrap: nowrap !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    text-overflow: ellipsis !important;
+    min-width: 0 !important;
+  }
+  :deep(.q-field__control-container) {
+    overflow: hidden !important;
+    min-width: 0 !important;
+    flex: 1 1 auto !important;
+  }
+}
+
+.select-single-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  max-width: 100%;
+}
+
+.select-option-item {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .sentido-card {
+    padding: 8px 6px;
+    min-height: 52px;
+  }
+  .sentido-icon-circle {
+    width: 26px;
+    height: 26px;
+  }
+  .sentido-label {
+    font-size: 0.8rem;
+  }
+  .sentido-sublabel {
+    font-size: 0.62rem;
+  }
 }
 </style>

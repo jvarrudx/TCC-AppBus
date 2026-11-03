@@ -26,8 +26,7 @@
           @click="imprimirCartaz"
         />
         <q-btn
-          outline
-          color="primary"
+          class="btn-bus-secondary"
           icon="download"
           label="Baixar PNG"
           no-caps

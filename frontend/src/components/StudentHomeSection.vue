@@ -46,6 +46,19 @@
         <span>{{ clienteNomeDisplay }}</span>
         <span class="text-grey-5" style="font-size: 0.70rem;">Ano Letivo 2026</span>
       </div>
+
+      <!-- BOTÃO HERÓI CENTRAL DE EMBARQUE EM 1 TOQUE (QUANDO APROVADO) -->
+      <div v-if="authStore.isAlunoAprovado" class="q-mt-md">
+        <q-btn
+          color="primary"
+          text-color="dark"
+          class="full-width btn-bus-primary hero-embark-btn text-weight-bolder"
+          icon="qr_code_scanner"
+          label="Embarcar Agora (Ler QR Code)"
+          no-caps
+          to="/aluno/qrcode"
+        />
+      </div>
     </q-card>
 
     <!-- Alerta Informativo se Pendente ou Rejeitado -->
@@ -88,7 +101,7 @@
             </span>
           </div>
 
-          <div class="text-subtitle2 text-weight-bolder text-white">
+          <div class="text-subtitle2 text-weight-bolder text-white" style="word-break: break-word; line-height: 1.25;">
             {{ viagemAtiva.rota_nome }}
           </div>
 
@@ -286,43 +299,6 @@
         </div>
       </div>
     </q-card>
-
-    <!-- 4. CARD CTA: EMBARQUE COM QR CODE (ETAPA 4.2) -->
-    <q-card class="dark-card q-pa-md text-center">
-      <div class="row items-center justify-center q-mb-xs">
-        <q-icon name="qr_code_scanner" color="primary" size="32px" class="q-mr-xs" />
-        <div class="text-subtitle1 text-weight-bolder text-white">
-          Embarque Óptico
-        </div>
-      </div>
-      <p class="text-caption text-grey-4 q-mb-md">
-        Ao entrar no ônibus, aponte a câmera para o QR Code fixado junto à porta.
-      </p>
-
-      <q-btn
-        color="primary"
-        text-color="dark"
-        class="full-width q-py-md btn-bus-primary text-weight-bolder text-subtitle1"
-        icon="qr_code_2"
-        label="LER QR CODE DO ÔNIBUS"
-        no-caps
-        to="/aluno/qrcode"
-      />
-    </q-card>
-
-    <!-- 5. GESTÃO DE PERFIL E PRIVACIDADE LGPD (ETAPA 4.3) -->
-    <div class="row justify-center q-my-xs">
-      <q-btn
-        flat
-        dense
-        color="grey-4"
-        icon="manage_accounts"
-        label="Meu Perfil & Governança LGPD"
-        class="text-caption text-weight-medium"
-        no-caps
-        to="/aluno/perfil"
-      />
-    </div>
   </div>
 </template>
 
@@ -588,14 +564,34 @@ onMounted(async () => {
 }
 
 .student-id-card {
-  background: linear-gradient(135deg, #1A2234 0%, #0F172A 100%);
-  border: 1px solid rgba(242, 192, 55, 0.35);
-  border-radius: 16px;
-  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.6);
+  background: linear-gradient(135deg, #1E293B 0%, #0F172A 60%, #090D16 100%);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 20px;
+  box-shadow: 0 12px 30px -5px rgba(0, 0, 0, 0.7), 0 0 20px rgba(245, 158, 11, 0.08);
+  position: relative;
+  overflow: hidden;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 140px;
+    height: 140px;
+    background: radial-gradient(circle, rgba(245, 158, 11, 0.12) 0%, transparent 70%);
+    pointer-events: none;
+  }
+}
+
+.hero-embark-btn {
+  height: 52px;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  border-radius: 14px;
 }
 
 .avatar-border {
-  border: 2px solid #F2C037;
+  border: 2px solid #F59E0B;
 }
 
 .border-top-subtle {

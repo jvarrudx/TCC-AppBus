@@ -156,8 +156,7 @@
 
             <template v-if="aluno.status_aprovacao === 'PENDENTE'">
               <q-btn
-                outline
-                color="negative"
+                class="btn-bus-destructive"
                 label="Rejeitar"
                 icon="close"
                 size="sm"
@@ -166,7 +165,6 @@
                 @click="confirmarRejeicao(aluno)"
               />
               <q-btn
-                unelevated
                 color="primary"
                 text-color="dark"
                 label="Aprovar"
@@ -421,19 +419,21 @@ onMounted(() => {
 
 <style scoped lang="scss">
 .student-card {
-  transition: transform 0.2s ease, border-color 0.2s ease;
+  transition: transform 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   border-left: 4px solid rgba(255, 255, 255, 0.1);
 
   &.border-pending {
-    border-left-color: #F2C037;
+    border-left-color: #F59E0B;
+    box-shadow: -2px 0 14px rgba(245, 158, 11, 0.2);
   }
 
   &:hover {
     transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
   }
 }
 
 .border-danger {
-  border: 1px solid rgba(193, 0, 21, 0.4);
+  border: 1px solid rgba(239, 68, 68, 0.35);
 }
 </style>

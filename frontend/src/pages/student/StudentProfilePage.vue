@@ -160,9 +160,7 @@
       </q-banner>
 
       <q-btn
-        outline
-        color="negative"
-        class="full-width q-py-sm text-weight-bold"
+        class="full-width q-py-sm btn-bus-destructive text-weight-bold"
         icon="delete_forever"
         label="Revogar Consentimento e Excluir Minha Conta"
         no-caps
@@ -371,7 +369,7 @@ onMounted(async () => {
 }
 
 .avatar-border {
-  border: 2px solid #F2C037;
+  border: 2px solid #F59E0B;
 }
 
 .border-subtle {
@@ -384,6 +382,6 @@ onMounted(async () => {
 }
 
 .border-danger {
-  border: 1px solid rgba(193, 0, 21, 0.4);
+  border: 1px solid rgba(239, 68, 68, 0.35);
 }
 </style>

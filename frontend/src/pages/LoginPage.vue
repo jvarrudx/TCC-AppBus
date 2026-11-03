@@ -274,14 +274,14 @@ const handleLogin = async () => {
 }
 
 .brand-badge {
-  background: #F2C037;
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
   padding: 12px;
   border-radius: 16px;
-  box-shadow: 0 8px 24px rgba(242, 192, 55, 0.4);
+  box-shadow: 0 8px 24px rgba(245, 158, 11, 0.4);
 }
 
 .profile-chips {
-  background: #121826;
+  background: #111827;
   padding: 4px;
   border-radius: 14px;
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -309,8 +309,9 @@ const handleLogin = async () => {
 
   &.active {
     background: #1E293B;
-    color: #F2C037;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    color: #F59E0B;
+    border: 1px solid rgba(245, 158, 11, 0.3);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.4);
   }
 }
 

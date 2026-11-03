@@ -1,8 +1,8 @@
 <template>
   <q-layout view="hHh lpR fFf" class="bg-dark-page">
-    <!-- Header Limpo e Não-Truncado -->
-    <q-header elevated class="bg-dark text-white q-py-xs app-header">
-      <q-toolbar class="q-px-md">
+    <!-- Header Mobile Elegante com Efeito Glassmorphism -->
+    <q-header class="app-header text-white">
+      <q-toolbar class="q-px-md toolbar-compact">
         <!-- Botão Menu Drawer (Apenas para Gestor) -->
         <q-btn
           v-if="authStore.isGestor"
@@ -17,12 +17,12 @@
           <q-tooltip>Menu Administrativo</q-tooltip>
         </q-btn>
 
-        <!-- Logo AppBus Sempre Íntegro -->
-        <div class="row items-center cursor-pointer no-wrap" @click="$router.push('/')">
-          <q-avatar size="34px" color="primary" text-color="dark" class="q-mr-sm shadow-1">
+        <!-- Logo AppBus Moderno -->
+        <div class="row items-center cursor-pointer no-wrap logo-brand" @click="$router.push('/')">
+          <div class="logo-avatar q-mr-sm">
             <q-icon name="directions_bus" size="20px" />
-          </q-avatar>
-          <div class="text-weight-bolder text-h6 text-white text-no-wrap">
+          </div>
+          <div class="text-weight-bolder text-h6 text-white text-no-wrap tracking-tight">
             App<span class="text-primary">Bus</span>
           </div>
         </div>
@@ -31,11 +31,13 @@
 
         <!-- Informações do Usuário e Logout -->
         <div class="row items-center q-gutter-x-sm no-wrap">
-          <div class="column text-right gt-xs">
-            <span class="text-caption text-weight-bold text-white leading-none">{{ authStore.userNome }}</span>
-            <span class="text-caption text-primary text-uppercase text-weight-bolder" style="font-size: 0.65rem;">
-              {{ authStore.role }}
+          <div class="user-pill row items-center no-wrap">
+            <span class="text-caption text-weight-bold text-white q-mr-xs ellipsis" style="max-width: 110px;">
+              {{ authStore.userNome?.split(' ')[0] }}
             </span>
+            <q-badge :color="roleBadgeColor" text-color="dark" class="text-weight-bolder" style="font-size: 0.65rem;">
+              {{ authStore.role }}
+            </q-badge>
           </div>
 
           <q-btn
@@ -225,7 +227,7 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useQuasar } from 'quasar'
 import { useAuthStore } from '../stores/authStore'
@@ -235,6 +237,12 @@ const router = useRouter()
 const authStore = useAuthStore()
 
 const leftDrawerOpen = ref(false)
+
+const roleBadgeColor = computed(() => {
+  if (authStore.isAluno) return 'primary'
+  if (authStore.isMotorista) return 'secondary'
+  return 'accent'
+})
 
 const handleLogout = () => {
   $q.dialog({
@@ -263,8 +271,36 @@ const handleLogout = () => {
 <style scoped lang="scss">
 .app-header {
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(18, 24, 38, 0.98);
-  backdrop-filter: blur(8px);
+  background: rgba(17, 24, 39, 0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+}
+
+.toolbar-compact {
+  min-height: 52px;
+}
+
+.logo-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+  color: #090D16;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 10px rgba(245, 158, 11, 0.3);
+}
+
+.tracking-tight {
+  letter-spacing: -0.02em;
+}
+
+.user-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 9999px;
+  padding: 3px 10px;
 }
 
 .text-no-wrap {
@@ -274,7 +310,7 @@ const handleLogout = () => {
 .btn-logout {
   transition: transform 0.2s ease, color 0.2s ease;
   &:hover {
-    color: #C10015 !important;
+    color: #EF4444 !important;
     transform: scale(1.05);
   }
 }
@@ -283,17 +319,20 @@ const handleLogout = () => {
   min-height: 100vh;
 }
 
-/* Barra de Navegação Inferior (Bottom Bar) */
+/* Barra de Navegação Inferior (Floating Dock Bar) */
 .app-bottom-bar {
   border-top: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(11, 15, 25, 0.96) !important;
-  backdrop-filter: blur(12px);
-  box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.4);
-  padding-bottom: env(safe-area-inset-bottom, 0px);
+  background: rgba(17, 24, 39, 0.88) !important;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-top-left-radius: 20px;
+  border-top-right-radius: 20px;
+  box-shadow: 0 -8px 30px rgba(0, 0, 0, 0.5);
+  padding-bottom: max(env(safe-area-inset-bottom, 0px), 6px);
 }
 
 .bottom-tabs {
-  height: 62px;
+  height: 60px;
   width: 100%;
   max-width: 600px;
   margin: 0 auto;
@@ -311,7 +350,7 @@ const handleLogout = () => {
   flex: 1 1 0px !important;
   max-width: 100% !important;
   min-width: 0 !important;
-  min-height: 58px;
+  min-height: 56px;
   padding: 4px 2px;
   transition: all 0.2s ease;
 
@@ -345,23 +384,37 @@ const handleLogout = () => {
 /* Destaque especial do botão de ação principal (Embarcar) */
 .tab-embarcar {
   :deep(.q-tab__icon) {
-    color: #F2C037;
-    filter: drop-shadow(0 0 6px rgba(242, 192, 55, 0.45));
+    background: linear-gradient(135deg, #F59E0B 0%, #D97706 100%);
+    color: #090D16 !important;
+    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: -8px;
+    margin-bottom: 2px;
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.45);
+    font-size: 20px !important;
+    transition: transform 0.15s ease;
   }
   :deep(.q-tab__label) {
-    color: #F2C037;
+    color: #F59E0B !important;
     font-weight: 700;
+  }
+  &:active :deep(.q-tab__icon) {
+    transform: scale(0.92);
   }
 }
 
 /* Otimização responsiva para smartphones ultracompactos (<= 360px de largura) */
 @media (max-width: 360px) {
   .bottom-tabs {
-    height: 56px;
+    height: 54px;
   }
 
   .nav-tab-item {
-    min-height: 52px;
+    min-height: 50px;
     padding: 2px 1px;
 
     :deep(.q-tab__icon) {
