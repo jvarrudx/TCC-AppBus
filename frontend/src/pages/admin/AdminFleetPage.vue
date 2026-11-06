@@ -6,15 +6,15 @@
         <div class="row items-center">
           <q-btn flat round dense icon="arrow_back" color="grey-4" class="q-mr-sm" @click="$router.push('/')" />
           <h1 class="text-h5 text-weight-bold text-white q-my-none">
-            Frota & <span class="text-primary">Rotas</span>
+            Frota, Rotas & <span class="text-primary">Motoristas</span>
           </h1>
         </div>
         <p class="text-caption text-grey-5 q-mt-xs q-mb-none">
-          Gestão de ônibus municipais, itinerários e pontos de parada
+          Gestão de ônibus municipais, condutores autorizados e itinerários
         </p>
       </div>
 
-      <!-- Abas de Navegação Frota / Rotas -->
+      <!-- Abas de Navegação Frota / Motoristas / Rotas -->
       <q-tabs
         v-model="tab"
         dense
@@ -24,6 +24,7 @@
         class="text-grey-4"
       >
         <q-tab name="frota" icon="directions_bus" label="Frota de Ônibus" />
+        <q-tab name="motoristas" icon="badge" label="Motoristas" />
         <q-tab name="rotas" icon="alt_route" label="Rotas e Itinerários" />
       </q-tabs>
     </div>
@@ -121,32 +122,26 @@
                 </div>
               </div>
 
-              <div class="text-caption text-grey-6 q-mt-sm uuid-text">
-                UUID: {{ bus.qr_code_uuid }}
+              <div class="q-mt-sm text-caption text-grey-5">
+                <span>UUID Operacional:</span>
+                <span class="text-grey-4 uuid-text q-ml-xs">{{ bus.id_operacional }}</span>
               </div>
             </div>
 
-            <!-- Ações do Veículo -->
-            <div class="q-mt-md row q-gutter-x-sm">
-              <q-btn
-                color="primary"
-                text-color="dark"
-                icon="qr_code_2"
-                label="Emitir Cartaz QR Code"
-                class="col btn-bus-primary text-weight-bold"
-                size="sm"
-                no-caps
-                @click="$router.push({ path: '/admin/qrcode', query: { onibusId: bus.id } })"
-              />
+            <div class="row items-center justify-between q-mt-md q-pt-sm border-top-dark">
+              <span class="text-caption text-grey-5">
+                Status: <strong :class="bus.ativo ? 'text-positive' : 'text-grey-5'">{{ bus.ativo ? 'Pronto para Linha' : 'Parado para Manutenção' }}</strong>
+              </span>
               <q-btn
                 flat
                 dense
                 round
-                :icon="bus.ativo ? 'pause_circle' : 'play_circle'"
-                :color="bus.ativo ? 'warning' : 'positive'"
+                :icon="bus.ativo ? 'toggle_on' : 'toggle_off'"
+                :color="bus.ativo ? 'positive' : 'grey-5'"
+                size="md"
                 @click="toggleStatusOnibus(bus)"
               >
-                <q-tooltip>{{ bus.ativo ? 'Inativar Ônibus' : 'Ativar Ônibus' }}</q-tooltip>
+                <q-tooltip>{{ bus.ativo ? 'Desativar Ônibus' : 'Ativar Ônibus' }}</q-tooltip>
               </q-btn>
             </div>
           </q-card>
@@ -154,12 +149,131 @@
       </div>
     </div>
 
-    <!-- Painel 2: Rotas e Itinerários -->
+    <!-- Painel 2: Motoristas (Gestão e Cadastro) -->
+    <div v-else-if="tab === 'motoristas'">
+      <div class="row items-center justify-between q-mb-md">
+        <div class="text-subtitle1 text-white text-weight-bold flex items-center">
+          <q-icon name="badge" size="20px" class="q-mr-xs text-primary" />
+          Motoristas Autorizados ({{ motoristasList.length }})
+        </div>
+        <div class="row q-gutter-x-sm">
+          <q-btn
+            outline
+            color="primary"
+            icon="refresh"
+            size="sm"
+            no-caps
+            :loading="loadingMotoristas"
+            @click="fetchMotoristas"
+          />
+          <q-btn
+            color="primary"
+            text-color="dark"
+            icon="person_add"
+            label="Cadastrar Motorista"
+            size="sm"
+            class="btn-bus-primary text-weight-bold"
+            no-caps
+            @click="openNovoMotoristaModal"
+          />
+        </div>
+      </div>
+
+      <!-- Error State Motoristas -->
+      <div v-if="errorMotoristas && !loadingMotoristas" class="text-center q-pa-xl dark-card rounded-borders border-danger q-mb-md">
+        <q-icon name="error_outline" size="52px" color="negative" class="q-mb-sm" />
+        <div class="text-h6 text-white text-weight-bold">Falha ao carregar motoristas</div>
+        <p class="text-caption text-grey-4 q-mt-xs q-mb-md">{{ errorMotoristas }}</p>
+        <q-btn
+          color="primary"
+          text-color="dark"
+          icon="refresh"
+          label="Tentar Novamente"
+          class="btn-bus-primary text-weight-bold"
+          no-caps
+          @click="fetchMotoristas"
+        />
+      </div>
+
+      <!-- Loader Motoristas -->
+      <div v-else-if="loadingMotoristas" class="text-center q-pa-xl">
+        <q-spinner-dots color="primary" size="48px" />
+        <div class="text-caption text-grey-4 q-mt-sm">Carregando condutores autorizados...</div>
+      </div>
+
+      <!-- Empty State Motoristas -->
+      <div v-else-if="motoristasList.length === 0" class="text-center q-pa-xl dark-card rounded-borders">
+        <q-icon name="sports_motorsports" size="64px" color="grey-7" class="q-mb-sm" />
+        <div class="text-h6 text-grey-4">Nenhum motorista cadastrado</div>
+        <p class="text-caption text-grey-5">Cadastre os motoristas que conduzirão as rotas municipais.</p>
+        <q-btn color="primary" text-color="dark" label="Cadastrar Motorista" no-caps @click="openNovoMotoristaModal" />
+      </div>
+
+      <!-- Grid de Motoristas -->
+      <div v-else class="row q-col-gutter-md">
+        <div v-for="mot in motoristasList" :key="mot.id" class="col-12 col-md-6">
+          <q-card class="dark-card q-pa-md h-100 flex column justify-between vehicle-card">
+            <div>
+              <div class="row items-center justify-between q-mb-xs">
+                <div class="text-subtitle1 text-weight-bold text-white flex items-center">
+                  <q-icon name="person" size="20px" class="q-mr-xs text-primary" />
+                  {{ mot.nome }}
+                </div>
+                <q-badge
+                  :color="mot.ativo ? 'positive' : 'grey-7'"
+                  :text-color="mot.ativo ? 'white' : 'grey-3'"
+                  class="cursor-pointer text-weight-bold"
+                  @click="toggleStatusMotorista(mot)"
+                >
+                  {{ mot.ativo ? 'Ativo' : 'Inativo' }}
+                  <q-tooltip>Clique para alternar status do motorista</q-tooltip>
+                </q-badge>
+              </div>
+
+              <div class="row q-col-gutter-x-md text-caption text-grey-4 q-mt-sm">
+                <div>
+                  <q-icon name="badge" size="16px" class="q-mr-xs text-grey-5" />
+                  <span>CNH: <strong>{{ mot.cnh }}</strong> (Cat. {{ mot.categoria_cnh || 'D' }})</span>
+                </div>
+                <div>
+                  <q-icon name="fingerprint" size="16px" class="q-mr-xs text-grey-5" />
+                  <span>CPF: <strong>{{ mot.cpf }}</strong></span>
+                </div>
+              </div>
+
+              <div v-if="mot.email" class="q-mt-xs text-caption text-grey-4">
+                <q-icon name="email" size="16px" class="q-mr-xs text-grey-5" />
+                <span>Login: <strong>{{ mot.email }}</strong></span>
+              </div>
+            </div>
+
+            <div class="row items-center justify-between q-mt-md q-pt-sm border-top-dark">
+              <span class="text-caption text-grey-5">
+                Operação: <strong :class="mot.ativo ? 'text-positive' : 'text-grey-5'">{{ mot.ativo ? 'Habilitado para Viagens' : 'Suspenso / Inativo' }}</strong>
+              </span>
+              <q-btn
+                flat
+                dense
+                round
+                :icon="mot.ativo ? 'toggle_on' : 'toggle_off'"
+                :color="mot.ativo ? 'positive' : 'grey-5'"
+                size="md"
+                @click="toggleStatusMotorista(mot)"
+              >
+                <q-tooltip>{{ mot.ativo ? 'Desativar Motorista' : 'Ativar Motorista' }}</q-tooltip>
+              </q-btn>
+            </div>
+          </q-card>
+        </div>
+      </div>
+    </div>
+
+    <!-- Painel 3: Rotas & Itinerários -->
     <div v-else-if="tab === 'rotas'">
       <div class="row items-center justify-between q-mb-md">
         <div class="text-subtitle1 text-white text-weight-bold flex items-center">
           <q-icon name="alt_route" size="20px" class="q-mr-xs text-primary" />
-          Rotas Operacionais ({{ rotasList.length }})
+          Rotas e Itinerários Cadastrados ({{ rotasList.length }})
         </div>
         <div class="row q-gutter-x-sm">
           <q-btn
@@ -175,7 +289,7 @@
             color="primary"
             text-color="dark"
             icon="add"
-            label="Nova Rota"
+            label="Cadastrar Rota"
             size="sm"
             class="btn-bus-primary text-weight-bold"
             no-caps
@@ -187,10 +301,8 @@
       <!-- Error State Rotas -->
       <div v-if="errorRotas && !loadingRotas" class="text-center q-pa-xl dark-card rounded-borders border-danger q-mb-md">
         <q-icon name="error_outline" size="52px" color="negative" class="q-mb-sm" />
-        <div class="text-h6 text-white text-weight-bold">Falha ao carregar rotas municipais</div>
-        <p class="text-caption text-grey-4 q-mt-xs q-mb-md">
-          {{ errorRotas }}
-        </p>
+        <div class="text-h6 text-white text-weight-bold">Falha ao carregar rotas</div>
+        <p class="text-caption text-grey-4 q-mt-xs q-mb-md">{{ errorRotas }}</p>
         <q-btn
           color="primary"
           text-color="dark"
@@ -202,13 +314,13 @@
         />
       </div>
 
-      <!-- Loader -->
+      <!-- Loader Rotas -->
       <div v-else-if="loadingRotas" class="text-center q-pa-xl">
         <q-spinner-dots color="primary" size="48px" />
         <div class="text-caption text-grey-4 q-mt-sm">Carregando rotas municipais...</div>
       </div>
 
-      <!-- Empty State -->
+      <!-- Empty State Rotas -->
       <div v-else-if="rotasList.length === 0" class="text-center q-pa-xl dark-card rounded-borders">
         <q-icon name="route" size="64px" color="grey-7" class="q-mb-sm" />
         <div class="text-h6 text-grey-4">Nenhuma rota cadastrada</div>
@@ -334,6 +446,128 @@
       </q-card>
     </q-dialog>
 
+    <!-- Modal Novo Motorista -->
+    <q-dialog v-model="showNovoMotoristaModal">
+      <q-card class="dark-card" style="min-width: 360px; max-width: 520px;">
+        <q-card-section>
+          <div class="text-h6 text-white text-weight-bold">Cadastrar Novo Motorista</div>
+          <div class="text-caption text-grey-5">Crie as credenciais e autorização de condução do motorista</div>
+        </q-card-section>
+
+        <q-card-section class="q-pt-none">
+          <q-form @submit.prevent="salvarNovoMotorista" class="q-gutter-y-sm">
+            <q-input
+              v-model="novoMotorista.nome"
+              outlined
+              dark
+              dense
+              label="Nome Completo *"
+              color="primary"
+              :rules="[val => !!val && val.trim().length >= 3 || 'Informe o nome completo']"
+            />
+
+            <div class="row q-col-gutter-sm">
+              <div class="col-12 col-sm-6">
+                <q-input
+                  v-model="novoMotorista.cpf"
+                  outlined
+                  dark
+                  dense
+                  label="CPF *"
+                  mask="###.###.###-##"
+                  unmasked-value
+                  color="primary"
+                  :rules="[val => !!val && val.length === 11 || 'CPF de 11 dígitos']"
+                />
+              </div>
+              <div class="col-12 col-sm-6">
+                <q-input
+                  v-model="novoMotorista.data_nascimento"
+                  type="date"
+                  outlined
+                  dark
+                  dense
+                  label="Data de Nascimento *"
+                  stack-label
+                  color="primary"
+                  :rules="[val => !!val || 'Data obrigatória']"
+                />
+              </div>
+            </div>
+
+            <div class="row q-col-gutter-sm">
+              <div class="col-12 col-sm-8">
+                <q-input
+                  v-model="novoMotorista.cnh"
+                  outlined
+                  dark
+                  dense
+                  label="Número do Registro CNH *"
+                  color="primary"
+                  :rules="[val => !!val && val.trim().length >= 5 || 'CNH obrigatória']"
+                />
+              </div>
+              <div class="col-12 col-sm-4">
+                <q-select
+                  v-model="novoMotorista.categoria_cnh"
+                  :options="['D', 'E', 'C', 'B', 'AB', 'AD', 'AE']"
+                  outlined
+                  dark
+                  dense
+                  label="Cat. CNH *"
+                  color="primary"
+                  :rules="[val => !!val || 'Selecione']"
+                />
+              </div>
+            </div>
+
+            <q-input
+              v-model="novoMotorista.email"
+              type="email"
+              outlined
+              dark
+              dense
+              label="E-mail de Login do Motorista *"
+              color="primary"
+              :rules="[val => !!val && /.+@.+\..+/.test(val) || 'E-mail válido é obrigatório']"
+            />
+
+            <q-input
+              v-model="novoMotorista.password"
+              :type="mostrarSenhaMotorista ? 'text' : 'password'"
+              outlined
+              dark
+              dense
+              label="Senha Inicial de Acesso (Mín. 8 caracteres) *"
+              color="primary"
+              :rules="[val => !!val && val.length >= 8 || 'Mínimo de 8 caracteres']"
+            >
+              <template v-slot:append>
+                <q-icon
+                  :name="mostrarSenhaMotorista ? 'visibility_off' : 'visibility'"
+                  class="cursor-pointer"
+                  @click="mostrarSenhaMotorista = !mostrarSenhaMotorista"
+                />
+              </template>
+            </q-input>
+
+            <div class="row justify-end q-gutter-x-sm q-mt-md">
+              <q-btn flat label="Cancelar" color="grey-5" v-close-popup />
+              <q-btn
+                type="submit"
+                color="primary"
+                text-color="dark"
+                label="Cadastrar Motorista"
+                class="btn-bus-primary"
+                no-caps
+                :loading="salvandoMotorista"
+              />
+            </div>
+          </q-form>
+        </q-card-section>
+      </q-card>
+    </q-dialog>
+
     <!-- Modal Nova Rota -->
     <q-dialog v-model="showNovaRotaModal">
       <q-card class="dark-card" style="min-width: 340px; max-width: 480px;">
@@ -389,6 +623,13 @@ const salvandoOnibus = ref(false)
 const onibusList = ref([])
 const showNovoOnibusModal = ref(false)
 
+const loadingMotoristas = ref(false)
+const errorMotoristas = ref(null)
+const salvandoMotorista = ref(false)
+const motoristasList = ref([])
+const showNovoMotoristaModal = ref(false)
+const mostrarSenhaMotorista = ref(false)
+
 const loadingRotas = ref(false)
 const errorRotas = ref(null)
 const salvandoRota = ref(false)
@@ -402,6 +643,16 @@ const novoOnibus = reactive({
   modelo: null,
   capacidade: 44,
   ativo: true
+})
+
+const novoMotorista = reactive({
+  nome: '',
+  cpf: '',
+  data_nascimento: '1985-01-01',
+  cnh: '',
+  categoria_cnh: 'D',
+  email: '',
+  password: ''
 })
 
 const novaRota = reactive({
@@ -434,6 +685,27 @@ const fetchOnibus = async () => {
     })
   } finally {
     loadingOnibus.value = false
+  }
+}
+
+const fetchMotoristas = async () => {
+  loadingMotoristas.value = true
+  errorMotoristas.value = null
+  try {
+    const res = await api.get('/motoristas/')
+    motoristasList.value = res.data?.results || res.data || []
+  } catch (error) {
+    const msg = error.response?.data?.detail ||
+                error.response?.data?.erro ||
+                'Falha ao consultar condutores autorizados.'
+    errorMotoristas.value = msg
+    $q.notify({
+      type: 'negative',
+      icon: 'warning',
+      message: 'Erro ao consultar motoristas.'
+    })
+  } finally {
+    loadingMotoristas.value = false
   }
 }
 
@@ -482,6 +754,35 @@ const toggleStatusOnibus = (bus) => {
         type: 'negative',
         icon: 'error',
         message: err.response?.data?.detail || 'Erro ao atualizar status do veículo.'
+      })
+    }
+  })
+}
+
+const toggleStatusMotorista = (mot) => {
+  const novoStatus = !mot.ativo
+  const acaoTexto = novoStatus ? 'ativar' : 'inativar'
+  $q.dialog({
+    title: `${novoStatus ? 'Ativar' : 'Inativar'} Motorista`,
+    message: `Deseja realmente ${acaoTexto} o motorista ${mot.nome}? ${!novoStatus ? 'Ele não poderá iniciar viagens operacionais.' : ''}`,
+    cancel: { label: 'Cancelar', flat: true, color: 'grey-5' },
+    ok: { label: 'Confirmar', color: novoStatus ? 'primary' : 'negative' },
+    dark: true,
+    persistent: true
+  }).onOk(async () => {
+    try {
+      await api.patch(`/motoristas/${mot.id}/`, { ativo: novoStatus })
+      mot.ativo = novoStatus
+      $q.notify({
+        type: 'positive',
+        icon: 'check_circle',
+        message: `Motorista ${mot.nome} ${novoStatus ? 'ativado' : 'inativado'} com sucesso.`
+      })
+    } catch (err) {
+      $q.notify({
+        type: 'negative',
+        icon: 'error',
+        message: err.response?.data?.detail || 'Erro ao atualizar status do motorista.'
       })
     }
   })
@@ -561,6 +862,54 @@ const salvarNovoOnibus = async () => {
   }
 }
 
+const openNovoMotoristaModal = () => {
+  novoMotorista.nome = ''
+  novoMotorista.cpf = ''
+  novoMotorista.data_nascimento = '1985-01-01'
+  novoMotorista.cnh = ''
+  novoMotorista.categoria_cnh = 'D'
+  novoMotorista.email = ''
+  novoMotorista.password = ''
+  showNovoMotoristaModal.value = true
+}
+
+const salvarNovoMotorista = async () => {
+  salvandoMotorista.value = true
+  try {
+    await api.post('/motoristas/', {
+      nome: novoMotorista.nome.trim(),
+      cpf: novoMotorista.cpf.trim(),
+      data_nascimento: novoMotorista.data_nascimento,
+      cnh: novoMotorista.cnh.trim(),
+      categoria_cnh: novoMotorista.categoria_cnh,
+      email: novoMotorista.email.trim().toLowerCase(),
+      password: novoMotorista.password,
+      ativo: true
+    })
+    $q.notify({
+      type: 'positive',
+      icon: 'check_circle',
+      message: 'Motorista cadastrado com sucesso! Credenciais geradas.'
+    })
+    showNovoMotoristaModal.value = false
+    await fetchMotoristas()
+  } catch (error) {
+    const errorMsg = error.response?.data?.email?.[0] ||
+                     error.response?.data?.cpf?.[0] ||
+                     error.response?.data?.cnh?.[0] ||
+                     error.response?.data?.password?.[0] ||
+                     error.response?.data?.detail ||
+                     'Erro ao cadastrar motorista.'
+    $q.notify({
+      type: 'negative',
+      icon: 'error',
+      message: errorMsg
+    })
+  } finally {
+    salvandoMotorista.value = false
+  }
+}
+
 const openNovaRotaModal = () => {
   novaRota.nome = ''
   showNovaRotaModal.value = true
@@ -593,6 +942,7 @@ const salvarNovaRota = async () => {
 
 onMounted(() => {
   fetchOnibus()
+  fetchMotoristas()
   fetchRotas()
   fetchModelos()
 })

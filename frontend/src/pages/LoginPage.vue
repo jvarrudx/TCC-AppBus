@@ -2,7 +2,7 @@
   <q-layout view="lHh Lpr lFf" class="bg-dark-page">
     <q-page-container>
       <q-page class="flex flex-center q-pa-md">
-        <div class="login-wrapper full-width" style="max-width: 440px;">
+        <div class="login-wrapper full-width" style="max-width: 420px;">
           <!-- Cabeçalho / Logo -->
           <div class="text-center q-mb-lg">
             <div class="brand-badge q-mb-sm inline-block">
@@ -26,14 +26,14 @@
                 :class="['profile-btn col', selectedProfile === p.role ? 'active' : '']"
                 @click="selectProfile(p)"
               >
-                <q-icon :name="p.icon" size="18px" class="q-mr-xs" />
+                <q-icon :name="p.icon" size="16px" class="q-mr-xs" />
                 <span>{{ p.label }}</span>
               </button>
             </div>
           </div>
 
           <!-- Card de Autenticação -->
-          <q-card class="dark-card q-pa-lg">
+          <q-card class="dark-card q-pa-md q-pa-sm-lg">
             <!-- Mensagem de Contexto do Perfil Selecionado -->
             <div class="profile-context-box q-pa-sm q-mb-md rounded-borders flex items-center">
               <q-avatar size="32px" :color="currentProfile.badgeColor" text-color="dark" class="q-mr-sm">
@@ -271,6 +271,9 @@ const handleLogin = async () => {
 <style scoped lang="scss">
 .login-wrapper {
   animation: fadeIn 0.4s ease-out;
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
 }
 
 .brand-badge {
@@ -292,15 +295,21 @@ const handleLogin = async () => {
   background: transparent;
   border: none;
   color: #94A3B8;
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 600;
-  padding: 10px 8px;
+  padding: 8px 6px;
   border-radius: 10px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   transition: all 0.2s ease;
+  white-space: nowrap;
+
+  @media (max-width: 380px) {
+    font-size: 0.72rem;
+    padding: 6px 2px;
+  }
 
   &:hover {
     color: #F8FAFC;
