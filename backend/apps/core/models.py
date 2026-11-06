@@ -11,7 +11,7 @@ Architectural Guidelines (agent.md):
 
 import uuid
 from datetime import date
-from django.db import models
+from django.db import models, transaction
 from django.conf import settings
 from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
@@ -353,26 +353,28 @@ class Pessoa(models.Model):
         4. Mascara PII (nome = 'Usuário Anonimizado', limpa CPF, data de nascimento e endereço).
         5. Mascara matrícula estudantil caso exista o papel de Aluno.
         6. Preserva IDs para resguardar o histórico imutável de Embarques para prestação de contas.
+        Garante atomicidade estrita mesmo se invocado via shell, Django Admin ou rotina agendada (Cron).
         """
-        self.nome = "Usuário Anonimizado"
-        self.cpf = None
-        self.data_nascimento = None
-        self.endereco = None
-        self.anonimizado = True
-        self.save()
+        with transaction.atomic():
+            self.nome = "Usuário Anonimizado"
+            self.cpf = None
+            self.data_nascimento = None
+            self.endereco = None
+            self.anonimizado = True
+            self.save()
 
-        # Inativa as credenciais de autenticação, invalida hash e remove PII de email
-        if self.usuario:
-            self.usuario.ativo = False
-            self.usuario.set_unusable_password()
-            self.usuario.email = f"anonimizado_{self.usuario.id}@appbus.local"
-            self.usuario.save()
+            # Inativa as credenciais de autenticação, invalida hash e remove PII de email
+            if self.usuario:
+                self.usuario.ativo = False
+                self.usuario.set_unusable_password()
+                self.usuario.email = f"anonimizado_{self.usuario.id}@appbus.local"
+                self.usuario.save()
 
-        # Mascara matrícula estudantil se houver papel Aluno
-        if hasattr(self, 'aluno'):
-            aluno = self.aluno
-            aluno.matricula = f"ANON_{aluno.id}"
-            aluno.save(update_fields=['matricula'])
+            # Mascara matrícula estudantil se houver papel Aluno
+            if hasattr(self, 'aluno'):
+                aluno = self.aluno
+                aluno.matricula = f"ANON_{aluno.id}"
+                aluno.save(update_fields=['matricula'])
 
 
 # ==============================================================================
@@ -1074,6 +1076,7 @@ class Embarque(models.Model):
         verbose_name = 'Embarque'
         verbose_name_plural = 'Embarques'
         ordering = ['-timestamp']
+        unique_together = ('viagem', 'aluno')
 
     def __str__(self):
         return f"Embarque: {self.aluno.pessoa.nome} na {self.viagem.rota.nome} via {self.get_metodo_validacao_display()} às {self.timestamp.strftime('%H:%M:%S')}"

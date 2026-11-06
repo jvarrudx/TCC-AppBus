@@ -1039,6 +1039,13 @@ class EmbarqueManualView(APIView):
                 status=status.HTTP_404_NOT_FOUND
             )
 
+        # RN02: Validação compulsória de status APROVADO
+        if aluno.status_aprovacao != TipoStatusAprovacao.APROVADO:
+            return Response(
+                {"erro": "O aluno selecionado não possui cadastro aprovado pela prefeitura."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
         # Anti-fraude: impede duplicidade
         if Embarque.objects.filter(viagem=viagem, aluno=aluno).exists():
             return Response(

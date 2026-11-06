@@ -69,6 +69,34 @@ def get_client_ip(request) -> str:
     return ip
 
 
+def validar_cpf_matematico(cpf: str) -> bool:
+    """
+    RN03 / LGPD: Validação matemática oficial do CPF pelo algoritmo Módulo 11 (Receita Federal).
+    Verifica 11 dígitos numéricos, descarta sequências repetidas (111.111.111-11)
+    e calcula os dois dígitos verificadores (DV1 e DV2).
+    """
+    if not cpf:
+        return False
+    digits = [int(d) for d in str(cpf) if d.isdigit()]
+    if len(digits) != 11:
+        return False
+    if len(set(digits)) == 1:
+        return False
+    # Primeiro dígito verificador
+    soma = sum(digits[i] * (10 - i) for i in range(9))
+    resto = (soma * 10) % 11
+    d1 = 0 if resto in (10, 11) else resto
+    if d1 != digits[9]:
+        return False
+    # Segundo dígito verificador
+    soma = sum(digits[i] * (11 - i) for i in range(10))
+    resto = (soma * 10) % 11
+    d2 = 0 if resto in (10, 11) else resto
+    if d2 != digits[10]:
+        return False
+    return True
+
+
 # ==============================================================================
 # 1. JWT CUSTOM TOKEN SERIALIZER (agent.md 2.1 Multi-tenancy & Claims)
 # ==============================================================================
@@ -360,6 +388,10 @@ class AlunoRegistroSerializer(serializers.Serializer):
                 raise serializers.ValidationError({
                     "responsavel_legal_cpf": "O CPF do responsável legal deve conter 11 dígitos numéricos."
                 })
+            if not validar_cpf_matematico(resp_digits):
+                raise serializers.ValidationError({
+                    "responsavel_legal_cpf": "CPF do responsável legal inválido (dígitos verificadores incorretos pelo Módulo 11)."
+                })
             attrs['responsavel_legal_cpf'] = f"{resp_digits[:3]}.{resp_digits[3:6]}.{resp_digits[6:9]}-{resp_digits[9:]}"
 
         # 5. Validação do Documento Legal Vigente
@@ -567,6 +599,7 @@ class MotoristaSerializer(serializers.ModelSerializer):
     cliente_id = serializers.IntegerField(read_only=True)
     nome = serializers.CharField(source='pessoa.nome', read_only=True)
     cpf = serializers.CharField(source='pessoa.cpf', read_only=True)
+    email = serializers.CharField(source='pessoa.usuario.email', read_only=True)
 
     class Meta:
         model = Motorista
@@ -576,6 +609,7 @@ class MotoristaSerializer(serializers.ModelSerializer):
             'pessoa_id',
             'nome',
             'cpf',
+            'email',
             'cnh',
             'categoria_cnh',
             'ativo'

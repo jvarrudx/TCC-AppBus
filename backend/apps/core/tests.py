@@ -799,7 +799,7 @@ class AlunoOnboardingValidacoesAPITestCase(APITestCase):
             "instituicao_id": self.instituicao.id,
             "matricula": "MENOR-02",
             "termo_aceito": True,
-            "responsavel_legal_cpf": "555.444.333-22"
+            "responsavel_legal_cpf": "123.456.789-09"
         }
 
         response = self.client.post(self.url_registro, payload, format='json')
@@ -808,7 +808,25 @@ class AlunoOnboardingValidacoesAPITestCase(APITestCase):
         usuario = UsuarioAuth.objects.get(email="menor.com.cpf@escola.edu.br")
         pessoa = Pessoa.objects.get(usuario=usuario)
         consentimento = Registro_Consentimento.objects.get(pessoa=pessoa)
-        self.assertEqual(consentimento.responsavel_legal_cpf, "555.444.333-22")
+        self.assertEqual(consentimento.responsavel_legal_cpf, "123.456.789-09")
+
+    def test_recusa_menor_idade_cpf_responsavel_invalido_modulo_11(self):
+        """Achado T-02: Menor de 18 anos com CPF de responsável inválido pelo Módulo 11 é rejeitado."""
+        payload = {
+            "email": "menor.cpf.invalido@escola.edu.br",
+            "password": "SenhaSegura123!",
+            "nome": "Estudante Menor Teste",
+            "cpf": "999.888.777-66",
+            "data_nascimento": "2010-01-01",
+            "cliente_id": self.cliente.id,
+            "instituicao_id": self.instituicao.id,
+            "matricula": "MENOR-INV",
+            "termo_aceito": True,
+            "responsavel_legal_cpf": "111.111.111-11"  # Sequência repetida / Módulo 11 inválido
+        }
+        response = self.client.post(self.url_registro, payload, format='json')
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("responsavel_legal_cpf", response.data)
 
     def test_recusa_sem_consentimento_termos(self):
         """Cadastro sem consentimento expresso dos Termos de Uso é rejeitado."""
@@ -1077,6 +1095,45 @@ class OperacaoCoreAPITestCase(APITestCase):
         # 2. Reenvio: Anti-fraude
         resp_2 = self.client.post('/api/operacao/embarque/manual/', payload, format='json')
         self.assertEqual(resp_2.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_checkin_manual_motorista_rejeita_aluno_pendente(self):
+        """RN02 (Achado T-04): Motorista não pode embarcar manualmente aluno com status PENDENTE ou não APROVADO."""
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+        self.aluno.status_aprovacao = TipoStatusAprovacao.PENDENTE
+        self.aluno.save()
+
+        self.client.force_authenticate(user=self.user_motorista)
+        payload = {"viagem_id": viagem.id, "aluno_id": self.aluno.id}
+        resp = self.client.post('/api/operacao/embarque/manual/', payload, format='json')
+        self.assertEqual(resp.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("não possui cadastro aprovado", resp.data['erro'])
+
+    def test_embarque_unique_together_constraint_banco(self):
+        """RN07 (Achado T-03): Garante restrição unique_together ('viagem', 'aluno') em nível de banco de dados."""
+        from django.db.utils import IntegrityError
+        viagem = Viagem.objects.create(
+            rota=self.rota,
+            onibus=self.onibus,
+            motorista=self.motorista,
+            sentido=SentidoViagem.IDA,
+            status=StatusViagem.EM_ANDAMENTO,
+            data=date.today(),
+            hora_inicio=timezone.now()
+        )
+        self.aluno.status_aprovacao = TipoStatusAprovacao.APROVADO
+        self.aluno.save()
+
+        Embarque.objects.create(viagem=viagem, aluno=self.aluno, metodo_validacao=MetodoValidacao.QR_CODE_APP)
+        with self.assertRaises(IntegrityError):
+            Embarque.objects.create(viagem=viagem, aluno=self.aluno, metodo_validacao=MetodoValidacao.MANUAL_MOTORISTA)
 
     def test_dashboard_motorista_agregacoes_em_tempo_real(self):
         """
