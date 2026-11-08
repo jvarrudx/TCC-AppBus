@@ -1,0 +1,309 @@
+// ==============================================================================
+// DIAGRAMA ENTIDADE-RELACIONAMENTO (DER) — SISTEMA APPBUS
+// Notação: DBML (Database Markup Language) para dbdiagram.io
+// Compatibilidade: PostgreSQL 15 / Django REST Framework
+// Total de Entidades: 21 tabelas distribuídas em 6 domínios lógicos
+// ==============================================================================
+
+Project AppBus_DER {
+  database_type: 'PostgreSQL 15'
+  Note: '''
+    # Diagrama Entidade-Relacionamento do Sistema AppBus
+    Arquitetura multi-tenant com padrão Party/Role, conformidade à LGPD (Lei nº 13.709/2018)
+    e rastreabilidade operacional de transporte universitário municipal.
+  '''
+}
+
+// ==============================================================================
+// 1. DOMÍNIO: AUTENTICAÇÃO E GOVERNANÇA LGPD (Header: Roxo/Violeta #7C3AED)
+// ==============================================================================
+
+Table usuario_auth [headercolor: #7C3AED, note: 'Credenciais de autenticação stateless (JWT) e controle de acesso'] {
+  id bigint [pk, increment, note: 'Chave primária numérica']
+  email varchar(255) [unique, not null, note: 'Identificador único de acesso (USERNAME_FIELD)']
+  password varchar(128) [not null, note: 'Hash criptográfico da senha (PBKDF2)']
+  ativo boolean [not null, default: true, note: 'Inativação lógica de acesso']
+  is_staff boolean [not null, default: false, note: 'Acesso ao painel administrativo Django']
+  is_superuser boolean [not null, default: false, note: 'Superusuário com privilégios totais']
+  last_login timestamp [null, note: 'Último acesso registrado']
+  data_cadastro timestamp [not null, default: `now()`, note: 'Criação do usuário']
+  data_atualizacao timestamp [not null, note: 'Última modificação cadastral']
+}
+
+Table documento_legal [headercolor: #7C3AED, note: 'Versionamento dos Termos de Uso e Políticas de Privacidade'] {
+  id bigint [pk, increment]
+  tipo varchar(30) [not null, note: 'Enum: TERMOS_DE_USO, POLITICA_PRIVACIDADE']
+  versao varchar(20) [not null, note: 'Versão do documento (ex: 1.0, 2.1)']
+  conteudo text [not null, note: 'Texto jurídico integral em Markdown/HTML']
+  data_publicacao timestamp [not null, default: `now()`, note: 'Início da vigência jurídica']
+  ativo boolean [not null, default: true, note: 'Indica se é a versão vigente']
+}
+
+Table registro_consentimento [headercolor: #7C3AED, note: 'Prova digital imutável de aceite e conformidade LGPD (Art. 8º e 14)'] {
+  id bigint [pk, increment]
+  pessoa_id bigint [not null, ref: > pessoa.id, note: 'FK: Titular dos dados pessoais']
+  documento_id bigint [not null, ref: > documento_legal.id, note: 'FK: Versão do termo aceito']
+  consentimento_concedido boolean [not null, default: true, note: 'Aceite expresso do titular']
+  responsavel_legal_cpf varchar(14) [null, note: 'Obrigatório se idade < 18 anos (Art. 14 LGPD)']
+  ip_address varchar(45) [not null, note: 'IP de origem na submissão']
+  user_agent text [not null, note: 'Navegador/dispositivo da submissão']
+  data_consentimento timestamp [not null, default: `now()`, note: 'Carimbo temporal do aceite']
+}
+
+// ==============================================================================
+// 2. DOMÍNIO: LOCALIZAÇÃO TERRITORIAL (Header: Azul #0284C7)
+// ==============================================================================
+
+Table uf [headercolor: #0284C7, note: 'Unidades Federativas brasileiras normalizadas'] {
+  id bigint [pk, increment]
+  sigla varchar(2) [unique, not null, note: 'Sigla da UF (ex: MG, SP, RJ)']
+  nome varchar(50) [not null, note: 'Nome por extenso']
+}
+
+Table cidade [headercolor: #0284C7, note: 'Municípios vinculados à respectiva UF'] {
+  id bigint [pk, increment]
+  uf_id bigint [not null, ref: > uf.id, note: 'FK: Estado pertencente']
+  nome varchar(100) [not null, note: 'Nome do município (unique_together com uf_id)']
+
+  indexes {
+    (nome, uf_id) [unique]
+  }
+}
+
+Table bairro [headercolor: #0284C7, note: 'Bairros vinculados a um município'] {
+  id bigint [pk, increment]
+  cidade_id bigint [not null, ref: > cidade.id, note: 'FK: Município pertencente']
+  nome varchar(100) [not null, note: 'Nome do bairro (unique_together com cidade_id)']
+
+  indexes {
+    (nome, cidade_id) [unique]
+  }
+}
+
+Table endereco [headercolor: #0284C7, note: 'Endereço estruturado e padronizado'] {
+  id bigint [pk, increment]
+  bairro_id bigint [not null, ref: > bairro.id, note: 'FK: Bairro']
+  logradouro varchar(255) [not null, note: 'Rua, avenida, praça']
+  numero varchar(20) [not null, note: 'Número ou S/N']
+  complemento varchar(100) [null, note: 'Apartamento, bloco, sala']
+  cep varchar(9) [not null, note: 'Código de Endereçamento Postal']
+}
+
+// ==============================================================================
+// 3. DOMÍNIO: PARTY / ROLE & MULTI-TENANT (Header: Índigo #4F46E5)
+// ==============================================================================
+
+Table cliente [headercolor: #4F46E5, note: 'Entidade raiz do isolamento multi-tenant (Prefeitura Municipal)'] {
+  id bigint [pk, increment, note: 'Identificador do Tenant (cliente_id)']
+  cnpj varchar(18) [unique, not null, note: 'CNPJ do município/órgão']
+  razao_social varchar(255) [not null, note: 'Razão social oficial']
+  nome_fantasia varchar(255) [null, note: 'Nome fantasia ou designação']
+  ativo boolean [not null, default: true, note: 'Status operacional do município']
+  data_cadastro timestamp [not null, default: `now()`, note: 'Adesão ao sistema']
+}
+
+Table pessoa [headercolor: #4F46E5, note: 'Entidade base (Party) com dados civis e suporte à anonimização LGPD'] {
+  id bigint [pk, increment]
+  usuario_id bigint [unique, not null, ref: - usuario_auth.id, note: 'Relacionamento 1:1 com credencial']
+  endereco_id bigint [null, ref: > endereco.id, note: 'FK: Endereço residencial']
+  nome varchar(255) [not null, note: 'Nome civil (mascarável)']
+  cpf varchar(14) [unique, null, note: 'CPF do cidadão (mascarável)']
+  data_nascimento date [null, note: 'Verificação de maioridade legal']
+  anonimizado boolean [not null, default: false, note: 'Flag de anonimização definitiva']
+  data_cadastro timestamp [not null, default: `now()`]
+}
+
+Table aluno [headercolor: #4F46E5, note: 'Papel (Role) do discente passageiro'] {
+  id bigint [pk, increment]
+  pessoa_id bigint [unique, not null, ref: - pessoa.id, note: 'Relacionamento 1:1 Party/Role']
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Município gestor (Tenant)']
+  instituicao_id bigint [not null, ref: > instituicao.id, note: 'FK: Faculdade/Universidade']
+  matricula varchar(50) [not null, note: 'Matrícula acadêmica']
+  status_aprovacao varchar(20) [not null, default: 'PENDENTE', note: 'Enum: PENDENTE, APROVADO, REJEITADO']
+  data_solicitacao timestamp [not null, default: `now()`, note: 'Auto-cadastro discente']
+  data_decisao timestamp [null, note: 'Homologação pelo gestor']
+  avaliado_por_id bigint [null, ref: > administrador.id, note: 'FK: Gestor homologador']
+}
+
+Table motorista [headercolor: #4F46E5, note: 'Papel (Role) do condutor de transporte universitário'] {
+  id bigint [pk, increment]
+  pessoa_id bigint [unique, not null, ref: - pessoa.id, note: 'Relacionamento 1:1 Party/Role']
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Município gestor (Tenant)']
+  cnh varchar(20) [unique, not null, note: 'Registro da CNH']
+  categoria_cnh varchar(5) [not null, note: 'Categoria profissional (D ou E)']
+  ativo boolean [not null, default: true, note: 'Habilitação operacional']
+}
+
+Table administrador [headercolor: #4F46E5, note: 'Papel (Role) do gestor municipal de frotas e linhas'] {
+  id bigint [pk, increment]
+  pessoa_id bigint [unique, not null, ref: - pessoa.id, note: 'Relacionamento 1:1 Party/Role']
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Município gestor (Tenant)']
+  cargo varchar(100) [not null, note: 'Cargo administrativo na prefeitura']
+  ativo boolean [not null, default: true]
+}
+
+Table instituicao [headercolor: #4F46E5, note: 'Instituições de ensino superior/técnico atendidas'] {
+  id bigint [pk, increment]
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Município gestor (Tenant)']
+  endereco_id bigint [null, ref: > endereco.id, note: 'FK: Endereço do campus']
+  nome varchar(255) [not null, note: 'Nome da faculdade/universidade']
+  sigla varchar(30) [not null, note: 'Sigla acadêmica (ex: UFV, UFSJ, IF)']
+  ativo boolean [not null, default: true]
+}
+
+// ==============================================================================
+// 4. DOMÍNIO: FROTA E ROTAS (Header: Verde Esmeralda #059669)
+// ==============================================================================
+
+Table modelo_veiculo [headercolor: #059669, note: 'Catálogo padronizado de veículos rodoviários'] {
+  id bigint [pk, increment]
+  marca varchar(100) [not null, note: 'Fabricante (ex: Mercedes-Benz, Marcopolo, Scania)']
+  nome varchar(100) [not null, note: 'Modelo (ex: Paradiso G8 1200, OF-1721)']
+  ativo boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+}
+
+Table onibus [headercolor: #059669, note: 'Veículos da frota municipal e identificador óptico QR Code'] {
+  id bigint [pk, increment]
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Município gestor (Tenant)']
+  modelo_id bigint [not null, ref: > modelo_veiculo.id, note: 'FK: Especificação do modelo']
+  placa varchar(10) [unique, not null, note: 'Placa veicular Mercosul']
+  capacidade integer [not null, note: 'Capacidade física total de assentos']
+  qr_code_uuid uuid [unique, not null, note: 'UUIDv4 do QR Code fixo impresso no cartaz A4']
+  ativo boolean [not null, default: true, note: 'Status de circulação']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+}
+
+Table rota [headercolor: #059669, note: 'Linhas e itinerários de transporte universitário'] {
+  id bigint [pk, increment]
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Município gestor (Tenant)']
+  nome varchar(255) [not null, note: 'Nome da linha (ex: Rota Noturna - Campus Central)']
+  ativo boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+}
+
+Table rota_instituicao [headercolor: #059669, note: 'Associação N:M de paradas da rota nas instituições'] {
+  id bigint [pk, increment]
+  rota_id bigint [not null, ref: > rota.id, note: 'FK: Linha de transporte']
+  instituicao_id bigint [not null, ref: > instituicao.id, note: 'FK: Campus atendido']
+  ordem_parada integer [not null, note: 'Ordem sequencial da parada (1, 2, 3...)']
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+
+  indexes {
+    (rota_id, instituicao_id) [unique]
+  }
+}
+
+// ==============================================================================
+// 5. DOMÍNIO: OPERACIONAL E TRANSACIONAL (Header: Vermelho #DC2626)
+// ==============================================================================
+
+Table viagem [headercolor: #DC2626, note: 'Instanciação de uma viagem diária por sentido'] {
+  id bigint [pk, increment]
+  rota_id bigint [not null, ref: > rota.id, note: 'FK: Itinerário']
+  onibus_id bigint [not null, ref: > onibus.id, note: 'FK: Veículo escalado']
+  motorista_id bigint [not null, ref: > motorista.id, note: 'FK: Condutor escalado']
+  sentido varchar(10) [not null, note: 'Enum: ida, volta']
+  status varchar(20) [not null, default: 'agendada', note: 'Enum: agendada, em_andamento, concluida, cancelada']
+  data date [not null, note: 'Data da operação']
+  hora_inicio time [null, note: 'Abertura operacional pelo motorista']
+  hora_fim time [null, note: 'Conclusão da viagem no destino']
+  ativo boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+}
+
+Table previsao_viagem [headercolor: #DC2626, note: 'Declarações dinâmicas de intenção ("Vou/Não vou") dos estudantes'] {
+  id bigint [pk, increment]
+  aluno_id bigint [not null, ref: > aluno.id, note: 'FK: Estudante declarante']
+  data date [not null, note: 'Data da previsão']
+  vai_ida boolean [not null, default: false, note: 'Declaração para trajeto de ida']
+  vai_volta boolean [not null, default: false, note: 'Declaração para trajeto de volta']
+  ativo boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+
+  indexes {
+    (aluno_id, data) [unique]
+  }
+}
+
+Table embarque [headercolor: #DC2626, note: 'Registro transacional de presença física validada no ônibus'] {
+  id bigint [pk, increment]
+  viagem_id bigint [not null, ref: > viagem.id, note: 'FK: Viagem ativa']
+  aluno_id bigint [not null, ref: > aluno.id, note: 'FK: Aluno embarcado']
+  metodo_validacao varchar(20) [not null, note: 'Enum: qr_code_app, manual_motorista']
+  timestamp timestamp [not null, default: `now()`, note: 'Carimbo de data/hora do check-in']
+  ativo boolean [not null, default: true]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+
+  indexes {
+    (viagem_id, aluno_id) [unique]
+  }
+}
+
+// ==============================================================================
+// 6. DOMÍNIO: COMUNICAÇÃO (Header: Âmbar/Laranja #D97706)
+// ==============================================================================
+
+Table aviso [headercolor: #D97706, note: 'Mural assíncrono de comunicados operacionais aos estudantes'] {
+  id uuid [pk, note: 'Chave primária UUIDv4 nativa']
+  cliente_id bigint [not null, ref: > cliente.id, note: 'FK: Isolamento multi-tenant municipal']
+  autor_id bigint [not null, ref: > usuario_auth.id, note: 'FK: Usuário emissor (gestor/motorista)']
+  rota_id bigint [null, ref: > rota.id, note: 'FK Opcional: Segmentação por rota']
+  viagem_id bigint [null, ref: > viagem.id, note: 'FK Opcional: Segmentação por viagem']
+  titulo varchar(255) [not null, note: 'Título do comunicado']
+  mensagem text [not null, note: 'Conteúdo informativo']
+  tipo varchar(20) [not null, default: 'GERAL', note: 'Enum: GERAL, ATRASO, MANUTENCAO, URGENTE']
+  ativo boolean [not null, default: true]
+  criado_em timestamp [not null, default: `now()`]
+  updated_at timestamp [not null]
+}
+
+// ==============================================================================
+// AGRUPADORES VISUAIS (TABLE GROUPS)
+// ==============================================================================
+
+TableGroup Autenticacao_e_LGPD {
+  usuario_auth
+  documento_legal
+  registro_consentimento
+}
+
+TableGroup Localizacao_Territorial {
+  uf
+  cidade
+  bairro
+  endereco
+}
+
+TableGroup Party_Role_e_MultiTenant {
+  cliente
+  pessoa
+  aluno
+  motorista
+  administrador
+  instituicao
+}
+
+TableGroup Frota_e_Rotas {
+  modelo_veiculo
+  onibus
+  rota
+  rota_instituicao
+}
+
+TableGroup Operacional_e_Transacional {
+  viagem
+  previsao_viagem
+  embarque
+}
+
+TableGroup Comunicacao {
+  aviso
+}
