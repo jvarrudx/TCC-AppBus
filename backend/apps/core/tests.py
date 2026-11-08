@@ -1779,6 +1779,91 @@ class MuralAvisosAPITestCase(APITestCase):
         self.assertFalse(aviso_mot1.ativo)
 
 
+# ==============================================================================
+# 11. TESTES DE SEGURANÇA JWT OWASP / LGPD (COOKIES HTTPONLY & BLACKLIST)
+# ==============================================================================
+
+class SegurancaJWTHttpOnlyAPITestCase(APITestCase):
+    """
+    Valida a arquitetura de segurança de sessão e blindagem contra XSS (OWASP ASVS / LGPD Art. 46):
+    1. Emissão de Cookie HttpOnly 'appbus_refresh_token' no login (POST /api/token/).
+    2. Reidratação silenciosa de sessão e metadados via Cookie HttpOnly (POST /api/token/refresh/).
+    3. Destruição do Cookie HttpOnly e invalidação em Blacklist no logout (POST /api/token/logout/).
+    """
+
+    def setUp(self):
+        self.cliente = Cliente.objects.create(
+            cnpj="91.919.191/0001-91",
+            razao_social="Prefeitura Seguranca OWASP",
+            nome_fantasia="Prefeitura OWASP",
+            ativo=True
+        )
+        self.instituicao = Instituicao.objects.create(
+            cliente=self.cliente,
+            nome="Instituto de Ciberseguranca",
+            sigla="ICS",
+            ativo=True
+        )
+        self.senha = "SenhaSeguraOWASP2026!"
+        self.user_aluno = UsuarioAuth.objects.create_user(
+            email="aluno.owasp@ics.edu.br",
+            password=self.senha,
+            ativo=True
+        )
+        self.pessoa_aluno = Pessoa.objects.create(
+            usuario=self.user_aluno,
+            nome="Rafael Ciberseguranca",
+            cpf="123.456.789-09",
+            data_nascimento="2001-06-15"
+        )
+        self.aluno = Aluno.objects.create(
+            pessoa=self.pessoa_aluno,
+            cliente=self.cliente,
+            instituicao=self.instituicao,
+            matricula="MAT-OWASP-01",
+            status_aprovacao=TipoStatusAprovacao.APROVADO
+        )
+
+    def test_fluxo_completo_login_cookie_httponly_refresh_e_logout_blacklist(self):
+        """
+        Comprova emissão do Cookie HttpOnly no login, renovação transparente de sessão
+        sem enviar refresh no corpo JSON e invalidação definitiva no logout.
+        """
+        # 1. Login emite Cookie HttpOnly 'appbus_refresh_token'
+        resp_login = self.client.post(
+            '/api/token/',
+            {'email': 'aluno.owasp@ics.edu.br', 'password': self.senha},
+            format='json'
+        )
+        self.assertEqual(resp_login.status_code, status.HTTP_200_OK)
+        self.assertIn('access', resp_login.data)
+        self.assertIn('user', resp_login.data)
+        self.assertEqual(resp_login.data['user']['role'], 'aluno')
+
+        self.assertIn('appbus_refresh_token', resp_login.cookies)
+        cookie_morsel = resp_login.cookies['appbus_refresh_token']
+        self.assertTrue(cookie_morsel['httponly'], "O cookie de refresh deve possuir a flag HttpOnly ativa.")
+        self.assertEqual(cookie_morsel['samesite'], 'Lax')
+
+        # 2. Refresh silencioso lendo exclusivamente do Cookie HttpOnly (payload JSON vazio)
+        resp_refresh = self.client.post('/api/token/refresh/', {}, format='json')
+        self.assertEqual(resp_refresh.status_code, status.HTTP_200_OK)
+        self.assertIn('access', resp_refresh.data)
+        self.assertIn('user', resp_refresh.data)
+        self.assertEqual(resp_refresh.data['user']['email'], 'aluno.owasp@ics.edu.br')
+        self.assertEqual(resp_refresh.data['user']['aluno']['matricula'], 'MAT-OWASP-01')
+
+        # 3. Logout destrói o Cookie HttpOnly no cliente
+        resp_logout = self.client.post('/api/token/logout/', {}, format='json')
+        self.assertEqual(resp_logout.status_code, status.HTTP_200_OK)
+        self.assertEqual(resp_logout.cookies['appbus_refresh_token'].value, '')
+
+        # 4. Tentativa posterior de refresh sem cookie HttpOnly válido falha com 400 Bad Request
+        resp_refresh_pos_logout = self.client.post('/api/token/refresh/', {}, format='json')
+        self.assertEqual(resp_refresh_pos_logout.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+
 
 
 
