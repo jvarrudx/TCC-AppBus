@@ -1,18 +1,12 @@
 import { defineStore } from 'pinia'
-import api from '../boot/axios'
+import api, { setAuthToken } from '../boot/axios'
 
 export const useAuthStore = defineStore('auth', {
   state: () => ({
-    accessToken: localStorage.getItem('appbus_access_token') || null,
-    refreshToken: localStorage.getItem('appbus_refresh_token') || null,
-    user: (() => {
-      try {
-        const stored = localStorage.getItem('appbus_user')
-        return stored ? JSON.parse(stored) : null
-      } catch (e) {
-        return null
-      }
-    })(),
+    // Access token estritamente em memória volátil (Zero Disk Storage / Blindagem contra XSS)
+    accessToken: null,
+    user: null,
+    isInitialized: false,
     loading: false,
     errorMessage: null
   }),
@@ -36,22 +30,47 @@ export const useAuthStore = defineStore('auth', {
   },
 
   actions: {
+    async initAuth() {
+      if (this.isInitialized) return this.isAuthenticated
+      this.loading = true
+      try {
+        // Tenta silenciosamente renovar o access token usando o Cookie HttpOnly 'appbus_refresh_token'
+        const response = await api.post('/token/refresh/')
+        const { access, user } = response.data
+
+        this.accessToken = access
+        this.user = user
+        setAuthToken(access)
+        return true
+      } catch (e) {
+        this.accessToken = null
+        this.user = null
+        setAuthToken(null)
+        return false
+      } finally {
+        this.isInitialized = true
+        this.loading = false
+      }
+    },
+
     async login({ email, password }) {
       this.loading = true
       this.errorMessage = null
       try {
+        // O backend Django injeta o refresh_token no Cookie HttpOnly 'appbus_refresh_token'
         const response = await api.post('/token/', { email, password })
-        const { access, refresh, user } = response.data
+        const { access, user } = response.data
 
         this.accessToken = access
-        this.refreshToken = refresh
         this.user = user
+        this.isInitialized = true
+        setAuthToken(access)
 
-        localStorage.setItem('appbus_access_token', access)
-        localStorage.setItem('appbus_refresh_token', refresh)
-        localStorage.setItem('appbus_user', JSON.stringify(user))
+        // Limpeza defensiva contra credenciais legadas na Web Storage API
+        localStorage.removeItem('appbus_access_token')
+        localStorage.removeItem('appbus_refresh_token')
+        localStorage.removeItem('appbus_user')
 
-        api.defaults.headers.common['Authorization'] = `Bearer ${access}`
         return user
       } catch (error) {
         const message = error.response?.data?.detail || 
@@ -64,34 +83,33 @@ export const useAuthStore = defineStore('auth', {
       }
     },
 
-    logout() {
-      this.accessToken = null
-      this.refreshToken = null
-      this.user = null
-      this.errorMessage = null
+    async logout() {
+      try {
+        await api.post('/token/logout/')
+      } catch (e) {
+        // Prossegue mesmo se a requisição ao servidor falhar
+      } finally {
+        this.accessToken = null
+        this.user = null
+        this.errorMessage = null
+        this.isInitialized = true
+        setAuthToken(null)
 
-      localStorage.removeItem('appbus_access_token')
-      localStorage.removeItem('appbus_refresh_token')
-      localStorage.removeItem('appbus_user')
-
-      delete api.defaults.headers.common['Authorization']
+        localStorage.removeItem('appbus_access_token')
+        localStorage.removeItem('appbus_refresh_token')
+        localStorage.removeItem('appbus_user')
+      }
     },
 
     setUser(userData) {
       this.user = userData
-      localStorage.setItem('appbus_user', JSON.stringify(userData))
     },
 
     async checkSession() {
-      if (!this.accessToken) return false
-      try {
-        // Testa a conectividade ou integridade do token
-        api.defaults.headers.common['Authorization'] = `Bearer ${this.accessToken}`
-        return true
-      } catch (e) {
-        this.logout()
-        return false
+      if (!this.accessToken) {
+        return await this.initAuth()
       }
+      return true
     }
   }
 })

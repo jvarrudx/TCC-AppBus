@@ -12,8 +12,14 @@ const router = createRouter({
 })
 
 // Navigation Guard de Segurança e Multi-Perfis (RBAC)
-router.beforeEach((to, from, next) => {
+router.beforeEach(async (to, from, next) => {
   const authStore = useAuthStore()
+
+  // Reidratação segura da sessão via Cookie HttpOnly antes de avaliar proteções de rota
+  if (!authStore.isInitialized) {
+    await authStore.initAuth()
+  }
+
   const requiresAuth = to.matched.some(record => record.meta.requiresAuth !== false)
 
   if (to.meta.title) {

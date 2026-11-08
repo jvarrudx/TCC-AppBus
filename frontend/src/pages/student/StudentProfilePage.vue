@@ -119,7 +119,7 @@
       </div>
 
       <p class="text-caption text-grey-4 q-mb-sm">
-        O tratamento dos seus dados é fundamentado na <strong>Execução de Políticas Públicas</strong> (Art. 7º, V da LGPD)
+        O tratamento dos seus dados é fundamentado na <strong>Execução de Políticas Públicas</strong> (Art. 7º, III e Art. 23 da LGPD)
         para gestão de frotas e segurança do transporte universitário gratuito.
       </p>
 

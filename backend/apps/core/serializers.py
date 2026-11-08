@@ -157,52 +157,62 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         if not self.user.ativo:
             raise AuthenticationFailed("Conta desativada ou anonimizada conforme a LGPD.")
 
-        # Resposta amigável com metadados adicionais para o cliente Vue (PWA)
-        pessoa_data = None
-        role = 'usuario'
-        cliente_id = None
-        status_aprovacao = None
-
-        aluno_data = None
-        if hasattr(self.user, 'pessoa'):
-            pessoa = self.user.pessoa
-            if hasattr(pessoa, 'aluno'):
-                role = 'aluno'
-                cliente_id = pessoa.aluno.cliente_id
-                status_aprovacao = pessoa.aluno.status_aprovacao
-                aluno = pessoa.aluno
-                aluno_data = {
-                    "id": aluno.id,
-                    "matricula": aluno.matricula,
-                    "instituicao_id": aluno.instituicao_id,
-                    "instituicao_nome": aluno.instituicao.nome if aluno.instituicao else None,
-                    "instituicao_sigla": aluno.instituicao.sigla if aluno.instituicao else None,
-                    "cliente_nome": aluno.cliente.nome_fantasia or aluno.cliente.razao_social if aluno.cliente else None,
-                }
-            elif hasattr(pessoa, 'motorista'):
-                role = 'motorista'
-                cliente_id = pessoa.motorista.cliente_id
-            elif hasattr(pessoa, 'administrador'):
-                role = 'administrador'
-                cliente_id = pessoa.administrador.cliente_id
-
-            pessoa_data = {
-                "id": pessoa.id,
-                "nome": pessoa.nome,
-                "cpf": pessoa.cpf,
-                "anonimizado": pessoa.anonimizado,
-            }
-
-        data['user'] = {
-            "id": self.user.id,
-            "email": self.user.email,
-            "role": role,
-            "cliente_id": cliente_id,
-            "status_aprovacao": status_aprovacao,
-            "pessoa": pessoa_data,
-            "aluno": aluno_data
-        }
+        data['user'] = get_user_metadata(self.user)
         return data
+
+
+def get_user_metadata(user):
+    """
+    Constrói a estrutura padronizada de metadados do usuário para frontend/PWA.
+    Utilizada tanto no login (POST /api/token/) quanto no refresh de sessão (POST /api/token/refresh/).
+    """
+    pessoa_data = None
+    role = 'usuario'
+    cliente_id = None
+    status_aprovacao = None
+    aluno_data = None
+
+    if hasattr(user, 'pessoa'):
+        pessoa = user.pessoa
+        if hasattr(pessoa, 'aluno'):
+            role = 'aluno'
+            cliente_id = pessoa.aluno.cliente_id
+            status_aprovacao = pessoa.aluno.status_aprovacao
+            aluno = pessoa.aluno
+            aluno_data = {
+                "id": aluno.id,
+                "matricula": aluno.matricula,
+                "instituicao_id": aluno.instituicao_id,
+                "instituicao_nome": aluno.instituicao.nome if aluno.instituicao else None,
+                "instituicao_sigla": aluno.instituicao.sigla if aluno.instituicao else None,
+                "cliente_nome": aluno.cliente.nome_fantasia or aluno.cliente.razao_social if aluno.cliente else None,
+            }
+        elif hasattr(pessoa, 'motorista'):
+            role = 'motorista'
+            cliente_id = pessoa.motorista.cliente_id
+        elif hasattr(pessoa, 'administrador'):
+            role = 'administrador'
+            cliente_id = pessoa.administrador.cliente_id
+
+        pessoa_data = {
+            "id": pessoa.id,
+            "nome": pessoa.nome,
+            "cpf": pessoa.cpf,
+            "anonimizado": pessoa.anonimizado,
+        }
+    else:
+        role = 'superuser' if user.is_superuser else 'indefinido'
+
+    return {
+        "id": user.id,
+        "email": user.email,
+        "is_superuser": user.is_superuser,
+        "role": role,
+        "cliente_id": cliente_id,
+        "status_aprovacao": status_aprovacao,
+        "pessoa": pessoa_data,
+        "aluno": aluno_data
+    }
 
 
 # ==============================================================================

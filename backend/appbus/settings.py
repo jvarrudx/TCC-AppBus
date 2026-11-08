@@ -130,9 +130,19 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# CORS Configuration
-cors_origins_raw = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
+# CORS & Cookie Security Configuration
+cors_origins_raw = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,https://localhost:5173,http://127.0.0.1:5173,https://127.0.0.1:5173'
+)
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_raw.split(',') if origin.strip()]
+CORS_ALLOW_CREDENTIALS = True
 if DEBUG:
     CORS_ALLOW_ALL_ORIGINS = True
-CORS_ALLOW_CREDENTIALS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://localhost:5173',
+    'http://localhost:5173',
+    'https://127.0.0.1:5173',
+    'http://127.0.0.1:5173',
+]

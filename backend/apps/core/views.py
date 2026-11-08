@@ -15,7 +15,8 @@ Architectural Guidelines (agent.md):
 """
 
 import logging
-from datetime import date
+from datetime import date, timedelta
+from django.conf import settings
 from django.db import transaction, connection
 from django.db.models import Q
 from django.utils import timezone
@@ -24,9 +25,12 @@ from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAuthenticated
-from rest_framework_simplejwt.views import TokenObtainPairView
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 
 from apps.core.models import (
+    UsuarioAuth,
     Cliente,
     Documento_Legal,
     Aluno,
@@ -55,6 +59,7 @@ from apps.core.permissions import (
     IsAdminOrMotoristaOrReadOnly,
 )
 from apps.core.serializers import (
+    get_user_metadata,
     CustomTokenObtainPairSerializer,
     AlunoRegistroSerializer,
     AlunoDetalheResponseSerializer,
@@ -118,16 +123,109 @@ class HealthCheckView(APIView):
 
 
 # ==============================================================================
-# 2. AUTENTICAÇÃO JWT CUSTOMIZADA (agent.md 2.1 Multi-Tenancy & Claims)
+# 2. AUTENTICAÇÃO JWT E SEGURANÇA OWASP / LGPD (Cookies HttpOnly)
 # ==============================================================================
+
+def set_refresh_cookie(response, refresh_token, request):
+    """
+    Injeta o refresh_token em um Cookie com flags de proteção estritas:
+    - HttpOnly: Bloqueia qualquer leitura/acesso via JavaScript (blindagem contra XSS).
+    - Secure: Tráfego restrito a conexões criptografadas HTTPS.
+    - SameSite=Lax: Prevenção contra CSRF (Cross-Site Request Forgery).
+    """
+    cookie_max_age = int(settings.SIMPLE_JWT.get('REFRESH_TOKEN_LIFETIME', timedelta(days=7)).total_seconds())
+    is_secure = not settings.DEBUG or request.is_secure() or request.headers.get('x-forwarded-proto') == 'https'
+    response.set_cookie(
+        key='appbus_refresh_token',
+        value=str(refresh_token),
+        max_age=cookie_max_age,
+        httponly=True,
+        secure=is_secure,
+        samesite='Lax',
+        path='/',
+    )
+
 
 class CustomTokenObtainPairView(TokenObtainPairView):
     """
     Endpoint de Login JWT (POST /api/token/).
-    Retorna access e refresh tokens com claims customizadas de Multi-tenancy
-    (cliente_id, role, pessoa_id, nome, status_aprovacao).
+    Retorna access token e metadados no corpo JSON e injeta o refresh_token
+    em Cookie HttpOnly blindado contra ataques XSS (OWASP ASVS / LGPD Privacy by Design).
     """
     serializer_class = CustomTokenObtainPairSerializer
+
+    def post(self, request, *args, **kwargs):
+        response = super().post(request, *args, **kwargs)
+        if response.status_code == status.HTTP_200_OK:
+            refresh_token = response.data.get('refresh')
+            if refresh_token:
+                set_refresh_cookie(response, refresh_token, request)
+        return response
+
+
+class CustomTokenRefreshView(TokenRefreshView):
+    """
+    Endpoint de Refresh JWT (POST /api/token/refresh/).
+    Suporta leitura do refresh token a partir do Cookie HttpOnly 'appbus_refresh_token'
+    ou do payload JSON (para compatibilidade com clientes de API).
+    Emite novo access token, renova o cookie HttpOnly e reidrata os metadados do usuário.
+    """
+    def post(self, request, *args, **kwargs):
+        data = request.data.copy() if hasattr(request.data, 'copy') else dict(request.data)
+        if 'refresh' not in data or not data['refresh']:
+            cookie_token = request.COOKIES.get('appbus_refresh_token')
+            if cookie_token:
+                data['refresh'] = cookie_token
+
+        serializer = self.get_serializer(data=data)
+
+        try:
+            serializer.is_valid(raise_exception=True)
+        except TokenError as e:
+            raise InvalidToken(e.args[0])
+
+        response_data = dict(serializer.validated_data)
+
+        # Resgata metadados do usuário para reidratar o frontend na reinicialização (F5)
+        try:
+            raw_token = data.get('refresh')
+            token_obj = RefreshToken(raw_token)
+            user_id = token_obj.payload.get('user_id')
+            if user_id:
+                user = UsuarioAuth.objects.select_related('pessoa').get(id=user_id)
+                response_data['user'] = get_user_metadata(user)
+        except Exception as e:
+            logger.warning(f"Não foi possível reidratar metadados do usuário no refresh: {e}")
+
+        response = Response(response_data, status=status.HTTP_200_OK)
+
+        # Se houve rotação de refresh token, atualiza o cookie HttpOnly
+        new_refresh = response_data.get('refresh')
+        if new_refresh:
+            set_refresh_cookie(response, new_refresh, request)
+
+        return response
+
+
+class CustomLogoutView(APIView):
+    """
+    Endpoint de Logout Seguro (POST /api/token/logout/).
+    Invalida o refresh token na Blacklist do backend e destrói o Cookie HttpOnly.
+    """
+    permission_classes = [AllowAny]
+
+    def post(self, request, *args, **kwargs):
+        refresh_token = request.data.get('refresh') or request.COOKIES.get('appbus_refresh_token')
+        if refresh_token:
+            try:
+                token = RefreshToken(refresh_token)
+                token.blacklist()
+            except Exception:
+                pass
+
+        response = Response({'detail': 'Sessão encerrada com sucesso.'}, status=status.HTTP_200_OK)
+        response.delete_cookie('appbus_refresh_token', path='/')
+        return response
 
 
 # ==============================================================================
