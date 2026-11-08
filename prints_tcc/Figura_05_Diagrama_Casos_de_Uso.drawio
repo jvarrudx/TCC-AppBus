@@ -1,0 +1,251 @@
+<mxfile host="app.diagrams.net" agent="Antigravity" version="21.0.0">
+  <diagram id="appbus-casos-de-uso" name="Casos de Uso AppBus">
+    <mxGraphModel dx="1400" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1150" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- FRONTEIRA DO SISTEMA APPBUS -->
+        <mxCell id="boundary_sistema" value="&lt;b&gt;Sistema AppBus (Plataforma Multi-Tenant)&lt;/b&gt;" style="rounded=1;arcSize=3;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#475569;strokeWidth=2;verticalAlign=top;align=left;spacingTop=16;spacingLeft=24;fontSize=15;fontColor=#0F172A;dashed=0;" vertex="1" parent="1">
+          <mxGeometry x="240" y="40" width="860" height="1030" as="geometry"/>
+        </mxCell>
+
+        <!-- ATORES UML -->
+        <mxCell id="actor_aluno" value="Aluno&lt;br&gt;&lt;span style=&quot;font-size:10px;font-weight:normal;color:#475569;&quot;&gt;(Estudante PWA)&lt;/span&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.8;fontStyle=1;fontSize=12;fontColor=#0C4A6E;" vertex="1" parent="1">
+          <mxGeometry x="60" y="210" width="60" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="actor_motorista" value="Motorista&lt;br&gt;&lt;span style=&quot;font-size:10px;font-weight:normal;color:#475569;&quot;&gt;(Condutor Bordo)&lt;/span&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.8;fontStyle=1;fontSize=12;fontColor=#14532D;" vertex="1" parent="1">
+          <mxGeometry x="60" y="800" width="60" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="actor_admin" value="Administrador&lt;br&gt;&lt;span style=&quot;font-size:10px;font-weight:normal;color:#475569;&quot;&gt;(Gestor Municipal)&lt;/span&gt;" style="shape=umlActor;verticalLabelPosition=bottom;verticalAlign=top;html=1;outlineConnect=0;fillColor=#FEE2E2;strokeColor=#E11D48;strokeWidth=1.8;fontStyle=1;fontSize=12;fontColor=#881337;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="470" width="60" height="110" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- COLUNA 1: CASOS DE USO EXCLUSIVOS ALUNO    -->
+        <!-- ========================================== -->
+        <mxCell id="uc02" value="&lt;b&gt;UC02&lt;/b&gt;&lt;br&gt;Realizar Auto-cadastro&lt;br&gt;Discente" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#0C4A6E;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="90" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc03" value="&lt;b&gt;UC03&lt;/b&gt;&lt;br&gt;Registrar Prova de&lt;br&gt;Consentimento LGPD" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=1.5;fontColor=#78350F;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="550" y="90" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc07" value="&lt;b&gt;UC07&lt;/b&gt;&lt;br&gt;Declarar Intenção de Viagem&lt;br&gt;(&amp;quot;Vou / Não Vou&amp;quot;)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#0C4A6E;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="180" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc09" value="&lt;b&gt;UC09&lt;/b&gt;&lt;br&gt;Validar Embarque via&lt;br&gt;Leitura de QR Code" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#0C4A6E;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="270" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc12" value="&lt;b&gt;UC12&lt;/b&gt;&lt;br&gt;Revogar Consentimento e&lt;br&gt;Anonimizar Conta" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#0C4A6E;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="360" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- COLUNA 1 (INFERIOR): CASOS MOTORISTA       -->
+        <!-- ========================================== -->
+        <mxCell id="uc08" value="&lt;b&gt;UC08&lt;/b&gt;&lt;br&gt;Abrir e Encerrar&lt;br&gt;Viagem" style="ellipse;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.5;fontColor=#14532D;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="690" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc10" value="&lt;b&gt;UC10&lt;/b&gt;&lt;br&gt;Validar Embarque Manual em&lt;br&gt;Contingência Offline" style="ellipse;whiteSpace=wrap;html=1;fillColor=#DCFCE7;strokeColor=#16A34A;strokeWidth=1.5;fontColor=#14532D;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="780" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc13b" value="&lt;b&gt;UC13b&lt;/b&gt;&lt;br&gt;Emitir Resposta Rápida&lt;br&gt;(Quick Reply)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#F3E8FF;strokeColor=#9333EA;strokeWidth=1.5;fontColor=#581C87;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="270" y="870" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- COLUNA 2 (CENTRO): COMPARTILHADOS          -->
+        <!-- ========================================== -->
+        <mxCell id="uc01" value="&lt;b&gt;UC01&lt;/b&gt;&lt;br&gt;Autenticar no Sistema&lt;br&gt;(JWT Multi-perfil)" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#4F46E5;strokeWidth=2;fontColor=#1E1B4B;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="220" width="220" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc11" value="&lt;b&gt;UC11&lt;/b&gt;&lt;br&gt;Monitorar Estimativa e&lt;br&gt;Lotação em Tempo Real" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#4F46E5;strokeWidth=2;fontColor=#1E1B4B;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="490" width="220" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc13" value="&lt;b&gt;UC13&lt;/b&gt;&lt;br&gt;Consultar e Publicar no&lt;br&gt;Mural de Avisos" style="ellipse;whiteSpace=wrap;html=1;fillColor=#EEF2FF;strokeColor=#4F46E5;strokeWidth=2;fontColor=#1E1B4B;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="760" width="220" height="65" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- COLUNA 3 (DIREITA): CASOS ADMINISTRADOR    -->
+        <!-- ========================================== -->
+        <mxCell id="uc04" value="&lt;b&gt;UC04&lt;/b&gt;&lt;br&gt;Gerenciar Fila de&lt;br&gt;Aprovação Cadastral" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#E11D48;strokeWidth=1.5;fontColor=#881337;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="850" y="330" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc05" value="&lt;b&gt;UC05&lt;/b&gt;&lt;br&gt;Gerenciar Frota e&lt;br&gt;Rotas Municipais" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#E11D48;strokeWidth=1.5;fontColor=#881337;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="850" y="490" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="uc06" value="&lt;b&gt;UC06&lt;/b&gt;&lt;br&gt;Emitir Cartaz QR Code&lt;br&gt;do Veículo" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEE2E2;strokeColor=#E11D48;strokeWidth=1.5;fontColor=#881337;fontSize=11.5;" vertex="1" parent="1">
+          <mxGeometry x="850" y="650" width="210" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- RELAÇÕES <<include>> e <<extend>>          -->
+        <!-- ========================================== -->
+        <mxCell id="e_include_lgpd" value="&amp;laquo;include&amp;raquo;" style="dashed=1;dashPattern=6 4;endArrow=open;endSize=8;html=1;strokeColor=#B45309;strokeWidth=1.8;fontColor=#B45309;fontSize=11;fontStyle=1;verticalAlign=bottom;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="uc02" target="uc03">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_extend_qr" value="&amp;laquo;extend&amp;raquo;" style="dashed=1;dashPattern=6 4;endArrow=open;endSize=8;html=1;strokeColor=#7E22CE;strokeWidth=1.8;fontColor=#7E22CE;fontSize=11;fontStyle=1;verticalAlign=bottom;exitX=1;exitY=0.2;entryX=0;entryY=0.8;" edge="1" parent="1" source="uc13b" target="uc13">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- ASSOCIAÇÕES DO ALUNO (LINHAS AZUIS #0284C7)-->
+        <!-- ========================================== -->
+        <mxCell id="e_aluno_uc02" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=1;exitY=0.2;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_aluno" target="uc02">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_aluno_uc07" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=1;exitY=0.4;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_aluno" target="uc07">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_aluno_uc09" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=1;exitY=0.65;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_aluno" target="uc09">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_aluno_uc12" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=1;exitY=0.9;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_aluno" target="uc12">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_aluno_uc01" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=0.9;exitY=0.1;entryX=0;entryY=0.2;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_aluno" target="uc01">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="160" y="160"/>
+              <mxPoint x="510" y="160"/>
+              <mxPoint x="510" y="233"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_aluno_uc11" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=0.8;exitY=1;entryX=0;entryY=0.3;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_aluno" target="uc11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="140" y="460"/>
+              <mxPoint x="510" y="460"/>
+              <mxPoint x="510" y="510"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_aluno_uc13" value="" style="endArrow=none;html=1;strokeColor=#0284C7;strokeWidth=1.6;exitX=0.4;exitY=1;entryX=0;entryY=0.2;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_aluno" target="uc13">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="84" y="440"/>
+              <mxPoint x="200" y="440"/>
+              <mxPoint x="200" y="640"/>
+              <mxPoint x="510" y="640"/>
+              <mxPoint x="510" y="773"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- ASSOCIAÇÕES MOTORISTA (LINHAS VERDES)      -->
+        <!-- ========================================== -->
+        <mxCell id="e_mot_uc08" value="" style="endArrow=none;html=1;strokeColor=#16A34A;strokeWidth=1.6;exitX=1;exitY=0.2;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_motorista" target="uc08">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_mot_uc10" value="" style="endArrow=none;html=1;strokeColor=#16A34A;strokeWidth=1.6;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_motorista" target="uc10">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_mot_uc13b" value="" style="endArrow=none;html=1;strokeColor=#16A34A;strokeWidth=1.6;exitX=1;exitY=0.85;entryX=0;entryY=0.5;" edge="1" parent="1" source="actor_motorista" target="uc13b">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_mot_uc13" value="" style="endArrow=none;html=1;strokeColor=#16A34A;strokeWidth=1.6;exitX=0.9;exitY=0.1;entryX=0;entryY=0.6;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_motorista" target="uc13">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="150" y="750"/>
+              <mxPoint x="520" y="750"/>
+              <mxPoint x="520" y="799"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_mot_uc11" value="" style="endArrow=none;html=1;strokeColor=#16A34A;strokeWidth=1.6;exitX=0.6;exitY=0;entryX=0;entryY=0.7;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_motorista" target="uc11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="96" y="580"/>
+              <mxPoint x="520" y="580"/>
+              <mxPoint x="520" y="536"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_mot_uc01" value="" style="endArrow=none;html=1;strokeColor=#16A34A;strokeWidth=1.6;exitX=0.2;exitY=0;entryX=0;entryY=0.7;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_motorista" target="uc01">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="72" y="660"/>
+              <mxPoint x="170" y="660"/>
+              <mxPoint x="170" y="420"/>
+              <mxPoint x="520" y="420"/>
+              <mxPoint x="520" y="266"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ========================================== -->
+        <!-- ASSOCIAÇÕES ADMINISTRADOR (LINHAS VERMELHAS)-->
+        <!-- ========================================== -->
+        <mxCell id="e_adm_uc04" value="" style="endArrow=none;html=1;strokeColor=#E11D48;strokeWidth=1.6;exitX=0;exitY=0.15;entryX=1;entryY=0.5;" edge="1" parent="1" source="actor_admin" target="uc04">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_adm_uc05" value="" style="endArrow=none;html=1;strokeColor=#E11D48;strokeWidth=1.6;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="actor_admin" target="uc05">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_adm_uc06" value="" style="endArrow=none;html=1;strokeColor=#E11D48;strokeWidth=1.6;exitX=0;exitY=0.85;entryX=1;entryY=0.5;" edge="1" parent="1" source="actor_admin" target="uc06">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="e_adm_uc11" value="" style="endArrow=none;html=1;strokeColor=#E11D48;strokeWidth=1.6;exitX=0;exitY=0.6;entryX=1;entryY=0.5;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_admin" target="uc11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1120" y="536"/>
+              <mxPoint x="1120" y="522"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_adm_uc01" value="" style="endArrow=none;html=1;strokeColor=#E11D48;strokeWidth=1.6;exitX=0.2;exitY=0;entryX=1;entryY=0.5;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_admin" target="uc01">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1192" y="252"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <mxCell id="e_adm_uc13" value="" style="endArrow=none;html=1;strokeColor=#E11D48;strokeWidth=1.6;exitX=0.2;exitY=1;entryX=1;entryY=0.5;edgeStyle=orthogonalEdgeStyle;rounded=1;" edge="1" parent="1" source="actor_admin" target="uc13">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1192" y="792"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- LEGENDA ABNT -->
+        <mxCell id="legenda_box" value="&lt;b&gt;Legenda de Atores e Relações UML 2.5:&lt;/b&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;span style=&quot;color:#0284C7;font-weight:bold;&quot;&gt;&#9644;&#9644;&lt;/span&gt; Discente (Aluno)&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;span style=&quot;color:#16A34A;font-weight:bold;&quot;&gt;&#9644;&#9644;&lt;/span&gt; Operacional (Motorista)&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;span style=&quot;color:#E11D48;font-weight:bold;&quot;&gt;&#9644;&#9644;&lt;/span&gt; Gestão (Administrador)&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;span style=&quot;color:#4F46E5;font-weight:bold;&quot;&gt;&#9632;&lt;/span&gt; Casos de Uso Compartilhados&lt;br&gt;&lt;span style=&quot;color:#475569;font-size:10px;&quot;&gt;&lt;b style=&quot;color:#B45309;&quot;&gt;&amp;laquo;include&amp;raquo;&lt;/b&gt; Inclusão Compulsória (LGPD Art. 14 / RN03)&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;&lt;b style=&quot;color:#7E22CE;&quot;&gt;&amp;laquo;extend&amp;raquo;&lt;/b&gt; Extensão Opcional de Alertas Rápidos (Quick Replies de 1 Toque)&lt;/span&gt;" style="rounded=1;arcSize=4;whiteSpace=wrap;html=1;fillColor=#F1F5F9;strokeColor=#CBD5E1;strokeWidth=1;fontSize=11;fontColor=#334155;align=center;verticalAlign=middle;" vertex="1" parent="1">
+          <mxGeometry x="270" y="995" width="800" height="50" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
