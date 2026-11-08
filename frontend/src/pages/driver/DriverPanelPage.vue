@@ -1,7 +1,25 @@
 <template>
   <div class="driver-panel q-pb-xl">
+    <!-- Banner de Modo Rodovia / Tolerância a Cold Start Offline -->
+    <div v-if="isOfflineRecovery" class="road-mode-banner q-pa-sm q-mb-md row items-center justify-between">
+      <div class="row items-center">
+        <q-icon name="minor_crash" size="22px" class="q-mr-sm text-warning" />
+        <div>
+          <div class="text-caption text-weight-bolder text-white">
+            MODO RODOVIA (Tolerância a Falhas Ativa)
+          </div>
+          <div class="text-caption text-grey-3" style="font-size: 0.75rem;">
+            Viagem e lista de alunos recuperadas do cache local após reinicialização sem sinal.
+          </div>
+        </div>
+      </div>
+      <q-badge color="warning" text-color="dark" class="text-weight-bold">
+        Cache Local
+      </q-badge>
+    </div>
+
     <!-- Banner de Status de Conectividade / Offline-First -->
-    <div v-if="!isOnline" class="offline-banner q-pa-sm q-mb-md text-center text-weight-bold">
+    <div v-else-if="!isOnline" class="offline-banner q-pa-sm q-mb-md text-center text-weight-bold">
       <q-icon name="wifi_off" size="18px" class="q-mr-xs" />
       <span>Modo Offline: Operando sem sinal de rede. Embarques serão salvos localmente.</span>
     </div>
@@ -503,8 +521,11 @@ const formIniciar = reactive({
   sentido: 'ida'
 })
 
-// Chave do LocalStorage para contingência offline
+// Chaves do LocalStorage para contingência offline e recuperação de Cold Start
 const OFFLINE_STORAGE_KEY = 'appbus_offline_checkins'
+const OFFLINE_TRIP_KEY = 'appbus_active_trip_snapshot'
+const OFFLINE_STUDENTS_KEY = 'appbus_active_trip_students'
+const isOfflineRecovery = ref(false)
 
 const truncate = (text, max = 28) => {
   if (!text) return ''
@@ -646,22 +667,88 @@ const saveOfflineQueue = () => {
   }
 }
 
-// Verifica se há viagem ativa para este motorista hoje
+// Persistência local de Snapshot da Viagem Ativa e Passageiros (Tolerância a Cold Start)
+const saveTripSnapshot = (viagem, alunos = null) => {
+  try {
+    if (viagem) {
+      localStorage.setItem(OFFLINE_TRIP_KEY, JSON.stringify(viagem))
+    }
+    if (alunos && alunos.length > 0) {
+      localStorage.setItem(OFFLINE_STUDENTS_KEY, JSON.stringify(alunos))
+    }
+  } catch (e) {
+    console.error('Falha ao salvar snapshot offline da viagem:', e)
+  }
+}
+
+const clearTripSnapshot = () => {
+  try {
+    localStorage.removeItem(OFFLINE_TRIP_KEY)
+    localStorage.removeItem(OFFLINE_STUDENTS_KEY)
+  } catch (e) {
+    console.error('Falha ao limpar snapshot offline da viagem:', e)
+  }
+}
+
+// Verifica se há viagem ativa para este motorista hoje (com fallback offline de Cold Start)
 const fetchViagemAtiva = async () => {
   errorInitial.value = null
   try {
     const response = await api.get('/operacao/viagem/ativa/')
     if (response.data.ativa) {
       viagemAtiva.value = response.data.viagem
+      isOfflineRecovery.value = false
+      saveTripSnapshot(response.data.viagem)
       await buscarAlunos()
     } else {
       viagemAtiva.value = null
+      isOfflineRecovery.value = false
+      clearTripSnapshot()
       await carregarDadosIniciais()
     }
   } catch (error) {
     console.error('Erro ao verificar viagem ativa:', error)
-    if (!error.response || error.code === 'ERR_NETWORK') {
-      errorInitial.value = 'Sem conexão com o servidor. Verifique seu sinal de rede ou tente novamente.'
+    const isNetworkError = !error.response || error.code === 'ERR_NETWORK' || !window.navigator.onLine
+
+    if (isNetworkError) {
+      // MECANISMO DE RESILIÊNCIA A COLD START NA RODOVIA:
+      // Tenta restaurar o Snapshot Local da Viagem e Passageiros caso o celular tenha reiniciado sem 4G/sinal
+      try {
+        const cachedTripRaw = localStorage.getItem(OFFLINE_TRIP_KEY)
+        if (cachedTripRaw) {
+          const cachedTrip = JSON.parse(cachedTripRaw)
+          viagemAtiva.value = cachedTrip
+          isOfflineRecovery.value = true
+
+          const cachedStudentsRaw = localStorage.getItem(OFFLINE_STUDENTS_KEY)
+          const cachedStudents = cachedStudentsRaw ? JSON.parse(cachedStudentsRaw) : []
+
+          const offlineAlunosIds = new Set(
+            offlineQueue.value
+              .filter(item => item.viagem_id === cachedTrip.viagem_id)
+              .map(item => item.aluno_id)
+          )
+
+          alunosResultado.value = cachedStudents.map(a => ({
+            ...a,
+            validando: false,
+            ja_embarcou: a.ja_embarcou || offlineAlunosIds.has(a.id)
+          }))
+
+          $q.notify({
+            type: 'warning',
+            icon: 'minor_crash',
+            message: 'Modo Rodovia Ativo: Viagem restaurada da persistência local offline.',
+            caption: 'Conferência nominal liberada. Os embarques serão sincronizados quando houver sinal.',
+            position: 'top',
+            timeout: 6000
+          })
+          return // Recuperação bem-sucedida! Não bloqueia a interface do motorista
+        }
+      } catch (cacheErr) {
+        console.error('Falha ao restaurar snapshot local de viagem:', cacheErr)
+      }
+      errorInitial.value = 'Sem conexão com o servidor e sem viagem ativa em cache local para restauração.'
     } else {
       errorInitial.value = error.response?.data?.detail || error.response?.data?.erro || 'Falha ao sincronizar painel operacional.'
     }
@@ -794,6 +881,8 @@ const confirmarConclusaoViagem = () => {
         message: 'Viagem concluída com sucesso!'
       })
       viagemAtiva.value = null
+      clearTripSnapshot()
+      isOfflineRecovery.value = false
       alunosResultado.value = []
       termoBusca.value = ''
       await carregarDadosIniciais()
@@ -809,10 +898,46 @@ const confirmarConclusaoViagem = () => {
   })
 }
 
-// Busca rápida de alunos para check-in manual
+// Busca rápida de alunos para check-in manual (Online + Suporte Offline com Snapshot)
 const buscarAlunos = async () => {
   if (!viagemAtiva.value) return
   loadingBusca.value = true
+
+  // Se estiver em modo offline ou recuperação de Cold Start, pesquisa no snapshot local
+  if (isOfflineRecovery.value || !isOnline.value) {
+    try {
+      const cachedRaw = localStorage.getItem(OFFLINE_STUDENTS_KEY)
+      const listaBase = cachedRaw ? JSON.parse(cachedRaw) : (alunosResultado.value || [])
+      const termo = (termoBusca.value || '').trim().toLowerCase()
+
+      const offlineAlunosIds = new Set(
+        offlineQueue.value
+          .filter(item => item.viagem_id === viagemAtiva.value.viagem_id)
+          .map(item => item.aluno_id)
+      )
+
+      const filtrados = termo
+        ? listaBase.filter(a =>
+            (a.nome && a.nome.toLowerCase().includes(termo)) ||
+            (a.cpf && a.cpf.includes(termo)) ||
+            (a.matricula && a.matricula.toLowerCase().includes(termo))
+          )
+        : listaBase
+
+      alunosResultado.value = filtrados.map(a => ({
+        ...a,
+        validando: false,
+        ja_embarcou: a.ja_embarcou || offlineAlunosIds.has(a.id)
+      }))
+    } catch (e) {
+      console.error('Erro no filtro local offline de alunos:', e)
+    } finally {
+      loadingBusca.value = false
+    }
+    return
+  }
+
+  // Consulta online com API DRF
   try {
     const params = {
       q: termoBusca.value || '',
@@ -820,6 +945,11 @@ const buscarAlunos = async () => {
     }
     const response = await api.get('/operacao/alunos/busca/', { params })
     const alunos = response.data || []
+
+    // Atualiza o snapshot offline de alunos para futuras contingências
+    if (!termoBusca.value && alunos.length > 0) {
+      saveTripSnapshot(viagemAtiva.value, alunos)
+    }
 
     // Cruzar com a fila offline local para manter status consistente
     const offlineAlunosIds = new Set(
@@ -835,6 +965,16 @@ const buscarAlunos = async () => {
     }))
   } catch (error) {
     console.error('Erro na busca de alunos:', error)
+    // Fallback gracioso para o cache local caso ocorra oscilação na rede
+    const cachedRaw = localStorage.getItem(OFFLINE_STUDENTS_KEY)
+    if (cachedRaw) {
+      const cached = JSON.parse(cachedRaw)
+      alunosResultado.value = cached.map(a => ({
+        ...a,
+        validando: false,
+        ja_embarcou: a.ja_embarcou || false
+      }))
+    }
   } finally {
     loadingBusca.value = false
   }
@@ -956,9 +1096,11 @@ const syncOfflineQueue = async () => {
 }
 
 // Listeners de Conectividade
-const handleOnline = () => {
+const handleOnline = async () => {
   isOnline.value = true
-  syncOfflineQueue()
+  isOfflineRecovery.value = false
+  await syncOfflineQueue()
+  await refreshDashboard()
 }
 
 const handleOffline = () => {
@@ -988,6 +1130,14 @@ onUnmounted(() => {
 .start-trip-card {
   border-radius: 18px;
   background: var(--app-surface) !important;
+}
+
+.road-mode-banner {
+  background: #78350F;
+  color: #FEF3C7;
+  border: 1px solid #D97706;
+  border-radius: 8px;
+  font-size: 0.85rem;
 }
 
 .offline-banner {

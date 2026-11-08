@@ -7,6 +7,7 @@ export const useAuthStore = defineStore('auth', {
     accessToken: null,
     user: null,
     isInitialized: false,
+    isOfflineSession: false,
     loading: false,
     errorMessage: null
   }),
@@ -40,11 +41,28 @@ export const useAuthStore = defineStore('auth', {
 
         this.accessToken = access
         this.user = user
+        this.isOfflineSession = false
         setAuthToken(access)
         return true
       } catch (e) {
+        // RESILIÊNCIA A COLD START NA RODOVIA (Tolerância a falha em trecho sem 4G):
+        // Se a API estiver inacessível e houver viagem de motorista em andamento, ativa sessão de contingência
+        const isNetworkErr = !e.response || e.code === 'ERR_NETWORK' || !window.navigator.onLine
+        const hasTripSnapshot = !!localStorage.getItem('appbus_active_trip_snapshot')
+
+        if (isNetworkErr && hasTripSnapshot) {
+          try {
+            const cachedProfile = localStorage.getItem('appbus_driver_profile')
+            this.user = cachedProfile ? JSON.parse(cachedProfile) : { role: 'motorista', email: 'motorista@appbus.com' }
+            this.accessToken = 'offline_contingency_token'
+            this.isOfflineSession = true
+            return true
+          } catch (_) {}
+        }
+
         this.accessToken = null
         this.user = null
+        this.isOfflineSession = false
         setAuthToken(null)
         return false
       } finally {
@@ -64,12 +82,23 @@ export const useAuthStore = defineStore('auth', {
         this.accessToken = access
         this.user = user
         this.isInitialized = true
+        this.isOfflineSession = false
         setAuthToken(access)
+
+        // Se for motorista, guarda perfil operacional em cache leve para recuperação de Cold Start
+        if (user && user.role === 'motorista') {
+          try {
+            localStorage.setItem('appbus_driver_profile', JSON.stringify(user))
+          } catch (_) {}
+        }
 
         // Limpeza defensiva contra credenciais legadas na Web Storage API
         localStorage.removeItem('appbus_access_token')
         localStorage.removeItem('appbus_refresh_token')
         localStorage.removeItem('appbus_user')
+        localStorage.removeItem('appbus_driver_profile')
+        localStorage.removeItem('appbus_active_trip_snapshot')
+        localStorage.removeItem('appbus_active_trip_students')
 
         return user
       } catch (error) {
@@ -98,6 +127,9 @@ export const useAuthStore = defineStore('auth', {
         localStorage.removeItem('appbus_access_token')
         localStorage.removeItem('appbus_refresh_token')
         localStorage.removeItem('appbus_user')
+        localStorage.removeItem('appbus_driver_profile')
+        localStorage.removeItem('appbus_active_trip_snapshot')
+        localStorage.removeItem('appbus_active_trip_students')
       }
     },
 
