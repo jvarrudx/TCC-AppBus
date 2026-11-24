@@ -19,11 +19,11 @@ else:
     load_dotenv(BASE_DIR / '.env')
 
 # Security settings
-SECRET_KEY = os.getenv('SECRET_KEY', 'appbus-insecure-development-secret-key-change-in-production')
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
+SECRET_KEY = os.getenv('DJANGO_SECRET_KEY') or os.getenv('SECRET_KEY', 'appbus-insecure-development-secret-key-change-in-production')
+DEBUG = (os.getenv('DJANGO_DEBUG') or os.getenv('DEBUG', 'True')).lower() in ('true', '1', 't')
 
-allowed_hosts_raw = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,web,backend,0.0.0.0')
-ALLOWED_HOSTS = [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
+allowed_hosts_raw = os.getenv('DJANGO_ALLOWED_HOSTS') or os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1,web,backend,0.0.0.0')
+ALLOWED_HOSTS = ['*'] if DEBUG else [h.strip() for h in allowed_hosts_raw.split(',') if h.strip()]
 
 # Application definition
 INSTALLED_APPS = [
@@ -89,7 +89,7 @@ DATABASES = {
 }
 
 # Custom User Model (Etapa 1.3 - agent.md)
-AUTH_USER_MODEL = 'core.Usuario_Auth'
+AUTH_USER_MODEL = 'core.UsuarioAuth'
 
 # Password validation
 AUTH_PASSWORD_VALIDATORS = [
@@ -130,7 +130,19 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
 }
 
-# CORS Configuration
-cors_origins_raw = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:5173,http://127.0.0.1:5173')
+# CORS & Cookie Security Configuration
+cors_origins_raw = os.getenv(
+    'CORS_ALLOWED_ORIGINS',
+    'http://localhost:5173,https://localhost:5173,http://127.0.0.1:5173,https://127.0.0.1:5173'
+)
 CORS_ALLOWED_ORIGINS = [origin.strip() for origin in cors_origins_raw.split(',') if origin.strip()]
 CORS_ALLOW_CREDENTIALS = True
+if DEBUG:
+    CORS_ALLOW_ALL_ORIGINS = True
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://localhost:5173',
+    'http://localhost:5173',
+    'https://127.0.0.1:5173',
+    'http://127.0.0.1:5173',
+]

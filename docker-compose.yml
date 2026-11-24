@@ -40,7 +40,7 @@ services:
       dockerfile: Dockerfile
     container_name: appbus_frontend
     restart: unless-stopped
-    command: npm run dev -- --host
+    command: npm run preview -- --host
     volumes:
       - ./frontend:/app
       - /app/node_modules
@@ -48,6 +48,14 @@ services:
       - "5173:5173"
     depends_on:
       - web
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: appbus_tunnel
+    restart: unless-stopped
+    command: tunnel --no-autoupdate --url https://frontend:5173 --no-tls-verify
+    depends_on:
+      - frontend
 
 volumes:
   postgres_data:

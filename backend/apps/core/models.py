@@ -9,8 +9,11 @@ Architectural Guidelines (agent.md):
 - Performance Constraints (2.5): PostgreSQL TextChoices enums to prevent lookup joins.
 """
 
+import uuid
 from datetime import date
-from django.db import models
+from django.db import models, transaction
+from django.conf import settings
+from django.utils import timezone
 from django.contrib.auth.models import AbstractBaseUser, PermissionsMixin, BaseUserManager
 from django.core.exceptions import ValidationError
 
@@ -25,24 +28,24 @@ class TipoDocumentoLegal(models.TextChoices):
     POLITICA_PRIVACIDADE = 'POLITICA_PRIVACIDADE', 'Política de Privacidade'
 
 
-class TipoStatusViagem(models.TextChoices):
-    """Ciclo de vida operacional da viagem."""
-    AGENDADA = 'AGENDADA', 'Agendada'
-    EM_ANDAMENTO = 'EM_ANDAMENTO', 'Em Andamento'
-    FINALIZADA = 'FINALIZADA', 'Finalizada'
-    CANCELADA = 'CANCELADA', 'Cancelada'
-
-
-class TipoMetodoValidacao(models.TextChoices):
-    """Método de validação do embarque do passageiro."""
-    QR_CODE_APP = 'QR_CODE_APP', 'QR Code (App Aluno)'
-    MANUAL_MOTORISTA = 'MANUAL_MOTORISTA', 'Manual (Motorista)'
-
-
-class TipoSentidoViagem(models.TextChoices):
+class SentidoViagem(models.TextChoices):
     """Sentido da viagem na rota."""
-    IDA = 'IDA', 'Ida'
-    VOLTA = 'VOLTA', 'Volta'
+    IDA = 'ida', 'Casa -> Instituição'
+    VOLTA = 'volta', 'Instituição -> Casa'
+
+
+class StatusViagem(models.TextChoices):
+    """Ciclo de vida operacional da viagem."""
+    AGENDADA = 'agendada', 'Agendada'
+    EM_ANDAMENTO = 'em_andamento', 'Em Andamento'
+    CONCLUIDA = 'concluida', 'Concluída'
+    CANCELADA = 'cancelada', 'Cancelada'
+
+
+class MetodoValidacao(models.TextChoices):
+    """Método de validação do embarque do passageiro."""
+    QR_CODE_APP = 'qr_code_app', 'QR Code (App Aluno)'
+    MANUAL_MOTORISTA = 'manual_motorista', 'Manual (Motorista)'
 
 
 class TipoStatusAprovacao(models.TextChoices):
@@ -50,6 +53,20 @@ class TipoStatusAprovacao(models.TextChoices):
     PENDENTE = 'PENDENTE', 'Pendente de Aprovação'
     APROVADO = 'APROVADO', 'Aprovado'
     REJEITADO = 'REJEITADO', 'Rejeitado'
+
+
+class TipoAviso(models.TextChoices):
+    """Classificação dos comunicados do mural de avisos."""
+    GERAL = 'GERAL', 'Geral'
+    ATRASO = 'ATRASO', 'Atraso'
+    MANUTENCAO = 'MANUTENCAO', 'Manutenção'
+    URGENTE = 'URGENTE', 'Urgente'
+
+
+# Aliases para retrocompatibilidade
+TipoSentidoViagem = SentidoViagem
+TipoStatusViagem = StatusViagem
+TipoMetodoValidacao = MetodoValidacao
 
 
 # ==============================================================================
@@ -175,7 +192,7 @@ class UsuarioAuthManager(BaseUserManager):
         return self.create_user(email, password, **extra_fields)
 
 
-class Usuario_Auth(AbstractBaseUser, PermissionsMixin):
+class UsuarioAuth(AbstractBaseUser, PermissionsMixin):
     """
     Custom User Model desacoplado de dados civis (Party/Role Pattern).
     Armazena estritamente credenciais e permissões de acesso ao sistema.
@@ -232,6 +249,10 @@ class Usuario_Auth(AbstractBaseUser, PermissionsMixin):
         self.ativo = value
 
 
+# Alias para retrocompatibilidade com agent.md
+Usuario_Auth = UsuarioAuth
+
+
 # ==============================================================================
 # 4. PARTY (Identidade Central - Party/Role Pattern)
 # ==============================================================================
@@ -239,7 +260,7 @@ class Usuario_Auth(AbstractBaseUser, PermissionsMixin):
 class Pessoa(models.Model):
     """
     Padrão Party/Role: Entidade central ('Party') que representa a identidade civil.
-    Relaciona-se 1:1 com Usuario_Auth e serve de âncora para os 'Roles'
+    Relaciona-se 1:1 com UsuarioAuth e serve de âncora para os 'Roles'
     (Aluno, Motorista, Administrador).
 
     LGPD:
@@ -247,7 +268,7 @@ class Pessoa(models.Model):
     - Suporta anonimização rigorosa via método anonimizar().
     """
     usuario = models.OneToOneField(
-        Usuario_Auth,
+        settings.AUTH_USER_MODEL,
         on_delete=models.PROTECT,
         related_name='pessoa',
         verbose_name="Credenciais de Acesso"
@@ -326,22 +347,34 @@ class Pessoa(models.Model):
     def anonimizar(self):
         """
         LGPD (No Hard Deletes - agent.md 2.3):
-        1. Inativa Usuario_Auth (bloqueio de login).
-        2. Seta Pessoa.anonimizado = True.
-        3. Mascara PII (nome = 'Usuário Anonimizado', limpa CPF, data de nascimento e endereço).
-        4. Preserva IDs para resguardar o histórico imutável de Embarques.
+        1. Inativa Usuario_Auth (bloqueio de login e invalidação de senha).
+        2. Mascara e-mail do usuário para desvincular PII e liberar e-mail original.
+        3. Seta Pessoa.anonimizado = True.
+        4. Mascara PII (nome = 'Usuário Anonimizado', limpa CPF, data de nascimento e endereço).
+        5. Mascara matrícula estudantil caso exista o papel de Aluno.
+        6. Preserva IDs para resguardar o histórico imutável de Embarques para prestação de contas.
+        Garante atomicidade estrita mesmo se invocado via shell, Django Admin ou rotina agendada (Cron).
         """
-        self.nome = "Usuário Anonimizado"
-        self.cpf = None
-        self.data_nascimento = None
-        self.endereco = None
-        self.anonimizado = True
-        self.save()
+        with transaction.atomic():
+            self.nome = "Usuário Anonimizado"
+            self.cpf = None
+            self.data_nascimento = None
+            self.endereco = None
+            self.anonimizado = True
+            self.save()
 
-        # Inativa as credenciais de autenticação
-        if self.usuario:
-            self.usuario.ativo = False
-            self.usuario.save()
+            # Inativa as credenciais de autenticação, invalida hash e remove PII de email
+            if self.usuario:
+                self.usuario.ativo = False
+                self.usuario.set_unusable_password()
+                self.usuario.email = f"anonimizado_{self.usuario.id}@appbus.local"
+                self.usuario.save()
+
+            # Mascara matrícula estudantil se houver papel Aluno
+            if hasattr(self, 'aluno'):
+                aluno = self.aluno
+                aluno.matricula = f"ANON_{aluno.id}"
+                aluno.save(update_fields=['matricula'])
 
 
 # ==============================================================================
@@ -448,6 +481,11 @@ class Registro_Consentimento(models.Model):
                 raise ValidationError({
                     'responsavel_legal_cpf': 'Conforme a LGPD, o CPF do responsável legal é obrigatório para menores de 18 anos.'
                 })
+
+
+# Aliases para compatibilidade PascalCase
+RegistroConsentimento = Registro_Consentimento
+DocumentoLegal = Documento_Legal
 
 
 # ==============================================================================
@@ -689,3 +727,443 @@ class Motorista(models.Model):
 
     def __str__(self):
         return f"Motorista: {self.pessoa.nome} (CNH: {self.cnh} - {self.categoria_cnh})"
+
+
+# ==============================================================================
+# 7. MODELOS DE FROTA E ROTAS (Etapa 1.5 - agent.md 3)
+# ==============================================================================
+
+class ModeloVeiculo(models.Model):
+    """
+    Modelo e fabricante do veículo rodoviário (ex: Marcopolo Paradiso, Caio Apache).
+    """
+    marca = models.CharField(
+        max_length=100,
+        verbose_name="Marca / Fabricante"
+    )
+    nome = models.CharField(
+        max_length=100,
+        verbose_name="Modelo"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'modelo_veiculo'
+        verbose_name = 'Modelo de Veículo'
+        verbose_name_plural = 'Modelos de Veículos'
+        ordering = ['marca', 'nome']
+
+    def __str__(self):
+        return f"{self.marca} {self.nome}"
+
+
+class Onibus(models.Model):
+    """
+    Veículo da frota operacional vinculado ao Cliente (Prefeitura/Empresa).
+    
+    Multi-tenancy:
+    - Segregado por cliente_id.
+    - Contém UUID imutável para geração do QR Code de embarque óptico.
+    """
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name='onibus',
+        verbose_name="Cliente / Prefeitura"
+    )
+    modelo = models.ForeignKey(
+        ModeloVeiculo,
+        on_delete=models.PROTECT,
+        related_name='onibus',
+        verbose_name="Modelo do Veículo"
+    )
+    placa = models.CharField(
+        max_length=10,
+        unique=True,
+        verbose_name="Placa do Veículo"
+    )
+    capacidade = models.PositiveIntegerField(
+        verbose_name="Capacidade de Passageiros Sentados"
+    )
+    qr_code_uuid = models.UUIDField(
+        default=uuid.uuid4,
+        unique=True,
+        editable=False,
+        verbose_name="UUID do QR Code"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'onibus'
+        verbose_name = 'Ônibus'
+        verbose_name_plural = 'Ônibus'
+        ordering = ['placa']
+
+    def __str__(self):
+        return f"Ônibus {self.placa} ({self.modelo}) - {self.cliente}"
+
+
+class Rota(models.Model):
+    """
+    Itinerário planejado para transporte dos estudantes universitários.
+    
+    Multi-tenancy:
+    - Segregado por cliente_id.
+    """
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.PROTECT,
+        related_name='rotas',
+        verbose_name="Cliente / Prefeitura"
+    )
+    nome = models.CharField(
+        max_length=150,
+        verbose_name="Nome da Rota"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'rota'
+        verbose_name = 'Rota'
+        verbose_name_plural = 'Rotas'
+        ordering = ['nome']
+
+    def __str__(self):
+        return f"Rota: {self.nome} ({self.cliente})"
+
+
+class RotaInstituicao(models.Model):
+    """
+    Tabela associativa que mapeia as instituições atendidas por uma rota e sua ordem de parada.
+    """
+    rota = models.ForeignKey(
+        Rota,
+        on_delete=models.CASCADE,
+        related_name='rota_instituicoes',
+        verbose_name="Rota"
+    )
+    instituicao = models.ForeignKey(
+        Instituicao,
+        on_delete=models.PROTECT,
+        related_name='rota_instituicoes',
+        verbose_name="Instituição de Ensino"
+    )
+    ordem_parada = models.PositiveIntegerField(
+        verbose_name="Ordem de Parada"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'rota_instituicao'
+        verbose_name = 'Instituição da Rota'
+        verbose_name_plural = 'Instituições da Rota'
+        unique_together = ('rota', 'instituicao')
+        ordering = ['ordem_parada']
+
+    def __str__(self):
+        return f"{self.rota.nome} -> Parada {self.ordem_parada}: {self.instituicao.nome}"
+
+
+# ==============================================================================
+# 8. MODELOS TRANSACIONAIS (EVENTOS E OPERAÇÃO)
+# ==============================================================================
+
+class Viagem(models.Model):
+    """
+    Instanciação da operação diária de uma rota com ônibus e motorista alocados.
+    
+    Multi-tenancy:
+    - O vínculo do cliente é garantido através de Rota/Onibus/Motorista.
+    """
+    rota = models.ForeignKey(
+        Rota,
+        on_delete=models.PROTECT,
+        related_name='viagens',
+        verbose_name="Rota"
+    )
+    onibus = models.ForeignKey(
+        Onibus,
+        on_delete=models.PROTECT,
+        related_name='viagens',
+        verbose_name="Ônibus"
+    )
+    motorista = models.ForeignKey(
+        Motorista,
+        on_delete=models.PROTECT,
+        related_name='viagens',
+        verbose_name="Motorista"
+    )
+    sentido = models.CharField(
+        max_length=10,
+        choices=SentidoViagem.choices,
+        verbose_name="Sentido da Viagem"
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=StatusViagem.choices,
+        default=StatusViagem.AGENDADA,
+        verbose_name="Status da Viagem"
+    )
+    data = models.DateField(
+        verbose_name="Data da Viagem"
+    )
+    hora_inicio = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Horário de Início"
+    )
+    hora_fim = models.DateTimeField(
+        null=True,
+        blank=True,
+        verbose_name="Horário de Fim"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'viagem'
+        verbose_name = 'Viagem'
+        verbose_name_plural = 'Viagens'
+        ordering = ['-data', '-created_at']
+
+    def __str__(self):
+        return f"Viagem {self.data} - {self.rota.nome} ({self.get_sentido_display()}) [{self.get_status_display()}]"
+
+
+class PrevisaoViagem(models.Model):
+    """
+    Previsão de demanda registrada pelo aluno ("Vou / Não Vou").
+    
+    Regra Crítica:
+    - Constraint de unicidade ['aluno', 'data'] para impedir duplicidade de intenções no mesmo dia.
+    """
+    aluno = models.ForeignKey(
+        Aluno,
+        on_delete=models.CASCADE,
+        related_name='previsoes_viagem',
+        verbose_name="Aluno"
+    )
+    data = models.DateField(
+        verbose_name="Data Prevista"
+    )
+    vai_ida = models.BooleanField(
+        default=False,
+        verbose_name="Vai na Ida"
+    )
+    vai_volta = models.BooleanField(
+        default=False,
+        verbose_name="Vai na Volta"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'previsao_viagem'
+        verbose_name = 'Previsão de Viagem'
+        verbose_name_plural = 'Previsões de Viagens'
+        unique_together = ('aluno', 'data')
+        ordering = ['-data']
+
+    def __str__(self):
+        return f"Previsão {self.data}: {self.aluno.pessoa.nome} (Ida: {'Sim' if self.vai_ida else 'Não'}, Volta: {'Sim' if self.vai_volta else 'Não'})"
+
+
+class Embarque(models.Model):
+    """
+    Registro físico ou manual de embarque do aluno no ônibus durante uma viagem.
+    
+    LGPD (Auditoria Imutável):
+    - Chaves protegidas por on_delete=models.PROTECT para evitar perda de logs
+      históricos mesmo se um perfil de aluno for anonimizado.
+    """
+    viagem = models.ForeignKey(
+        Viagem,
+        on_delete=models.PROTECT,
+        related_name='embarques',
+        verbose_name="Viagem"
+    )
+    aluno = models.ForeignKey(
+        Aluno,
+        on_delete=models.PROTECT,
+        related_name='embarques',
+        verbose_name="Aluno"
+    )
+    metodo_validacao = models.CharField(
+        max_length=20,
+        choices=MetodoValidacao.choices,
+        default=MetodoValidacao.QR_CODE_APP,
+        verbose_name="Método de Validação"
+    )
+    timestamp = models.DateTimeField(
+        default=timezone.now,
+        verbose_name="Horário do Embarque"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'embarque'
+        verbose_name = 'Embarque'
+        verbose_name_plural = 'Embarques'
+        ordering = ['-timestamp']
+        unique_together = ('viagem', 'aluno')
+
+    def __str__(self):
+        return f"Embarque: {self.aluno.pessoa.nome} na {self.viagem.rota.nome} via {self.get_metodo_validacao_display()} às {self.timestamp.strftime('%H:%M:%S')}"
+
+
+# ==============================================================================
+# 11. MURAL DE AVISOS E COMUNICADOS ASSÍNCRONOS (Módulo de Mural)
+# ==============================================================================
+
+class Aviso(models.Model):
+    """
+    Mural de Avisos e Comunicados Assíncronos municipais.
+    Permite à gestão pública e motoristas publicarem comunicados operacionais
+    (avisos gerais, atrasos, manutenções na frota ou urgências) para os alunos.
+
+    Isolamento Multi-tenant:
+    - Todo aviso pertence estritamente ao cliente (prefeitura) do autor.
+    - Pode ser geral ou restrito a uma Rota ou Viagem específica.
+    """
+    id = models.UUIDField(
+        primary_key=True,
+        default=uuid.uuid4,
+        editable=False,
+        verbose_name="ID (UUID)"
+    )
+    cliente = models.ForeignKey(
+        Cliente,
+        on_delete=models.CASCADE,
+        related_name='avisos',
+        verbose_name="Cliente (Prefeitura)"
+    )
+    autor = models.ForeignKey(
+        UsuarioAuth,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='avisos_criados',
+        verbose_name="Autor do Comunicado"
+    )
+    rota = models.ForeignKey(
+        Rota,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='avisos',
+        verbose_name="Rota Específica"
+    )
+    viagem = models.ForeignKey(
+        Viagem,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='avisos',
+        verbose_name="Viagem Específica"
+    )
+    titulo = models.CharField(
+        max_length=150,
+        verbose_name="Título do Comunicado"
+    )
+    mensagem = models.TextField(
+        verbose_name="Mensagem do Comunicado"
+    )
+    tipo = models.CharField(
+        max_length=20,
+        choices=TipoAviso.choices,
+        default=TipoAviso.GERAL,
+        verbose_name="Tipo de Comunicado"
+    )
+    ativo = models.BooleanField(
+        default=True,
+        verbose_name="Ativo"
+    )
+    criado_em = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name="Criado em"
+    )
+    updated_at = models.DateTimeField(
+        auto_now=True,
+        verbose_name="Atualizado em"
+    )
+
+    class Meta:
+        db_table = 'aviso'
+        verbose_name = 'Aviso'
+        verbose_name_plural = 'Avisos'
+        ordering = ['-criado_em']
+
+    def __str__(self):
+        return f"[{self.get_tipo_display()}] {self.titulo} ({self.cliente.razao_social})"
+

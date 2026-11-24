@@ -1,0 +1,49 @@
+@startuml
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+LAYOUT_TOP_DOWN()
+HIDE_STEREOTYPE()
+
+scale 2
+skinparam defaultFontName "Segoe UI"
+skinparam BackgroundColor #FFFFFF
+skinparam wrapWidth 380
+skinparam maxMessageSize 220
+skinparam nodesep 60
+skinparam ranksep 45
+
+AddElementTag("client_storage", $bgColor="#FFF7ED", $fontColor="#9A3412", $borderColor="#EA580C")
+AddElementTag("aux_tunnel", $bgColor="#F8FAFC", $fontColor="#475569", $borderColor="#64748B", $borderStyle="Dashed")
+
+Person(users, "Usuários do Sistema (Aluno, Motorista e Gestor)", "Acesso Mobile-First via navegador web ou aplicativo PWA instalável.")
+
+System_Boundary(compose, "Orquestração de Contêineres\n(docker-compose.yml)\nRede Bridge (Docker Compose)") {
+
+    Container(frontend, "1. Camada de Apresentação (appbus_frontend)", "node:20-alpine | Serviço: frontend | Porta :5173", "SPA/PWA em Vue 3, Vite e Quasar. TLS local via @vitejs/plugin-basic-ssl, estado volátil via Pinia (Zero Disk Storage p/ Access Token), Axios (Interceptors JWT) e proxy /api para web:8000.")
+
+    Container(tunnel, "Serviço Auxiliar de Demonstração (appbus_tunnel)", "cloudflare/cloudflared:latest | Serviço: tunnel", "Túnel HTTPS público temporário (--no-tls-verify) para demonstração e verificação técnica em dispositivos móveis em bancada.", $tags="aux_tunnel")
+
+    ContainerDb(offline_cache, "Camada Offline no Cliente", "vite-plugin-pwa | Workbox & localStorage", "Service Worker (cache App Shell) e persistência local da fila de embarques e snapshot de viagem (Modo Rodovia).", $tags="client_storage")
+
+    Container(backend, "2. Camada de Aplicação e Negócio (appbus_backend)", "python:3.11-slim | Serviço: web | Porta :8000", "API RESTful em Django + DRF (runserver em Dev; Gunicorn Prod). Sessão stateless (SimpleJWT + Cookie HttpOnly), isolamento Multi-Tenant (TenantBaseViewSet / cliente_id), transações atômicas e LGPD.")
+
+    ContainerDb(db, "3. Camada de Persistência (appbus_db)", "postgres:15-alpine | Serviço: db | Porta :5432", "SGBDOR PostgreSQL 15 com 21 entidades (Padrão Party/Role), controle de concorrência MVCC e bloqueio pessimista (select_for_update).")
+
+    ContainerDb(pg_volume, "Volume Persistente (postgres_data)", "Docker Volume | Host-Mounted", "Armazenamento físico desacoplado do contêiner para durabilidade pós-reinicialização.", $tags="client_storage")
+
+    Lay_R(frontend, tunnel)
+    Lay_R(offline_cache, backend)
+    Lay_R(db, pg_volume)
+    Lay_D(frontend, offline_cache)
+    Lay_D(backend, db)
+}
+
+Rel_D(users, frontend, "Acessa interface Mobile-First", "HTTPS :5173")
+Rel_D(users, tunnel, "Acesso remoto de demonstração", "HTTPS público")
+Rel_L(tunnel, frontend, "Encaminha tráfego ao preview", "HTTPS :5173 (--no-tls-verify)")
+Rel_D(frontend, offline_cache, "Armazena ativos e fila local")
+Rel_D(frontend, backend, "Consome API REST (withCredentials: true)", "JSON / HTTP :8000 | Bearer Token (RAM) + Cookie HttpOnly")
+Rel_D(backend, db, "Executa consultas e transações ACID", "TCP/IP :5432 | Django ORM (transaction.atomic)")
+Rel_R(db, pg_volume, "Persiste tabelas e índices", "I/O (/var/lib/postgresql/data)")
+
+@enduml

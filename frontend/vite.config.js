@@ -1,13 +1,86 @@
 import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
+import { quasar, transformAssetUrls } from '@quasar/vite-plugin'
+import { VitePWA } from 'vite-plugin-pwa'
+import basicSsl from '@vitejs/plugin-basic-ssl'
+
+import { fileURLToPath } from 'node:url'
 
 export default defineConfig({
-  plugins: [vue()],
+  plugins: [
+    basicSsl(),
+    vue({
+      template: { transformAssetUrls }
+    }),
+    quasar({
+      sassVariables: fileURLToPath(new URL('./src/css/quasar.variables.scss', import.meta.url))
+    }),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'masked-icon.svg'],
+      manifest: {
+        name: 'AppBus - Transporte Universitário',
+        short_name: 'AppBus',
+        description: 'Sistema Inteligente de Transporte Universitário e Gestão de Frotas',
+        theme_color: '#F2C037',
+        background_color: '#121212',
+        display: 'standalone',
+        orientation: 'portrait',
+        icons: [
+          {
+            src: '/pwa-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
+          },
+          {
+            src: '/pwa-512x512.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'any maskable'
+          }
+        ]
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg}']
+      },
+      devOptions: {
+        enabled: true
+      }
+    })
+  ],
+  resolve: {
+    alias: {
+      '@': '/src'
+    }
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,
+    allowedHosts: true,
     watch: {
       usePolling: true
+    },
+    proxy: {
+      '/api': {
+        target: 'http://web:8000',
+        changeOrigin: true
+      }
+    }
+  },
+  preview: {
+    host: '0.0.0.0',
+    port: 5173,
+    allowedHosts: true,
+    proxy: {
+      '/api': {
+        target: 'http://web:8000',
+        changeOrigin: true
+      }
     }
   }
 })
