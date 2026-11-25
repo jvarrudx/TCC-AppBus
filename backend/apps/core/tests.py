@@ -1252,14 +1252,14 @@ class OperacaoCoreAPITestCase(APITestCase):
         self.assertEqual(resp_aluno.status_code, status.HTTP_403_FORBIDDEN)
 
     def test_modelo_a_prioridade_volta_garantida_para_quem_foi_na_ida(self):
-        """Modelo A: Aluno que declara ida + volta tem vaga garantida na volta."""
+        """Modelo A: Aluno que declara ida + volta recebe status informativo de Prioridade de Retorno na volta."""
         self.client.force_authenticate(user=self.user_aluno)
         payload = {"data": str(date.today()), "vai_ida": True, "vai_volta": True}
 
         response = self.client.post('/api/operacao/predicao/', payload, format='json')
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-        self.assertEqual(response.data['status_volta'], 'GARANTIDA')
-        self.assertEqual(response.data['status_volta_display'], 'Prioridade de Ciclo Garantida')
+        self.assertEqual(response.data['status_volta'], 'PRIORIDADE_RETORNO')
+        self.assertEqual(response.data['status_volta_display'], 'Prioridade de Retorno')
         self.assertIsNone(response.data['posicao_fila'])
 
     def test_modelo_a_fila_de_espera_quando_capacidade_esgotada(self):
