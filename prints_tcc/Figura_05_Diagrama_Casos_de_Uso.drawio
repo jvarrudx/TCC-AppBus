@@ -30,7 +30,7 @@
           <mxGeometry x="270" y="90" width="210" height="60" as="geometry"/>
         </mxCell>
 
-        <mxCell id="uc03" value="&lt;b&gt;UC03&lt;/b&gt;&lt;br&gt;Registrar Prova de&lt;br&gt;Consentimento LGPD" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=1.5;fontColor=#78350F;fontSize=11.5;" vertex="1" parent="1">
+        <mxCell id="uc03" value="&lt;b&gt;UC03&lt;/b&gt;&lt;br&gt;Registrar Aceite e&lt;br&gt;Ciência Documental" style="ellipse;whiteSpace=wrap;html=1;fillColor=#FEF3C7;strokeColor=#D97706;strokeWidth=1.5;fontColor=#78350F;fontSize=11.5;" vertex="1" parent="1">
           <mxGeometry x="550" y="90" width="210" height="60" as="geometry"/>
         </mxCell>
 
@@ -42,7 +42,7 @@
           <mxGeometry x="270" y="270" width="210" height="60" as="geometry"/>
         </mxCell>
 
-        <mxCell id="uc12" value="&lt;b&gt;UC12&lt;/b&gt;&lt;br&gt;Revogar Consentimento e&lt;br&gt;Anonimizar Conta" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#0C4A6E;fontSize=11.5;" vertex="1" parent="1">
+        <mxCell id="uc12" value="&lt;b&gt;UC12&lt;/b&gt;&lt;br&gt;Descaracterizar Cadastro&lt;br&gt;e Desativar Conta" style="ellipse;whiteSpace=wrap;html=1;fillColor=#E0F2FE;strokeColor=#0284C7;strokeWidth=1.5;fontColor=#0C4A6E;fontSize=11.5;" vertex="1" parent="1">
           <mxGeometry x="270" y="360" width="210" height="60" as="geometry"/>
         </mxCell>
 

@@ -165,7 +165,7 @@ const profiles = [
     icon: 'school',
     badgeColor: 'primary',
     title: 'Acesso do Estudante',
-    description: 'Predição de demanda diária e embarque com QR Code.'
+    description: 'Declaração de intenção de viagem e embarque com QR Code.'
   },
   {
     role: 'motorista',
