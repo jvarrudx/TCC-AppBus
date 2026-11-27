@@ -652,7 +652,7 @@ def calcular_status_prioridade_volta(aluno, data_alvo, vai_ida, vai_volta):
     """
     Implementa a Regra de Negócio 'Modelo A' (Prioridade de Ida e Fila de Espera para a Volta):
     1. Quem foi na IDA (marcou vai_ida=True ou possui embarque em viagem de ida hoje)
-       possui vaga GARANTIDA na VOLTA.
+       possui status informativo PRIORIDADE_RETORNO na VOLTA.
     2. Quem vai APENAS na volta disputa as vagas remanescentes (Capacidade - Alunos da Ida).
     3. Se as vagas remanescentes se esgotarem, entra na FILA DE ESPERA (com posição ordinal).
     4. Se algum aluno da ida desmarcar a volta, a vaga é automaticamente liberada para a fila de espera.
@@ -702,12 +702,12 @@ def calcular_status_prioridade_volta(aluno, data_alvo, vai_ida, vai_volta):
         prioritarios_volta_count += 1
         vagas_remanescentes = max(0, capacidade_veiculo - prioritarios_volta_count)
         return {
-            "status_volta": "GARANTIDA",
-            "status_volta_display": "Prioridade de Ciclo Garantida",
+            "status_volta": "PRIORIDADE_RETORNO",
+            "status_volta_display": "Prioridade de Retorno",
             "posicao_fila": None,
             "vagas_remanescentes": vagas_remanescentes,
             "capacidade_onibus": capacidade_veiculo,
-            "mensagem_prioridade": "Sua vaga na volta está GARANTIDA pelo critério de prioridade (você utilizou o transporte de ida)."
+            "mensagem_prioridade": "Você possui Prioridade de Retorno (indicador informativo por declaração ou embarque na ida), sujeita à capacidade do veículo alocado na viagem."
         }
 
     # 4. Aluno NÃO foi na ida, mas quer a volta:

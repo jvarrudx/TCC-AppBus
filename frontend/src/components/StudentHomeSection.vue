@@ -188,14 +188,14 @@
       </p>
 
       <!-- Botões Grandes Táteis de Predição (Toggles com PATCH Automático) -->
-      <div class="row q-col-gutter-sm">
+      <div class="row q-col-gutter-sm items-stretch">
         <!-- TOGGLE IDA -->
-        <div class="col-6">
+        <div class="col-6 flex">
           <q-btn
             :color="vaiIda ? 'primary' : 'grey-9'"
             :text-color="vaiIda ? 'dark' : 'grey-4'"
             :outline="!vaiIda"
-            class="full-width q-py-md btn-toggle-demand text-weight-bolder"
+            class="full-width full-height q-py-md btn-toggle-demand text-weight-bolder"
             no-caps
             :disable="loadingPredicao"
             :loading="savingPredicao && ultimoToggled === 'ida'"
@@ -214,12 +214,12 @@
         </div>
 
         <!-- TOGGLE VOLTA -->
-        <div class="col-6">
+        <div class="col-6 flex">
           <q-btn
             :color="vaiVolta ? 'primary' : 'grey-9'"
             :text-color="vaiVolta ? 'dark' : 'grey-4'"
             :outline="!vaiVolta"
-            class="full-width q-py-md btn-toggle-demand text-weight-bolder"
+            class="full-width full-height q-py-md btn-toggle-demand text-weight-bolder"
             no-caps
             :disable="loadingPredicao"
             :loading="savingPredicao && ultimoToggled === 'volta'"
@@ -238,7 +238,7 @@
         </div>
       </div>
 
-      <!-- 3.1 STATUS DA VOLTA (REGRA DE PRIORIDADE DE CICLO & FILA DE ESPERA) -->
+      <!-- 3.1 STATUS DA VOLTA (REGRA DE PRIORIDADE DE RETORNO & FILA DE ESPERA) -->
       <div v-if="vaiVolta" class="q-mt-sm">
         <!-- FILA DE ESPERA -->
         <div v-if="statusVolta === 'FILA_ESPERA'" class="waiting-list-box q-pa-sm rounded-borders">
@@ -256,15 +256,15 @@
           </div>
         </div>
 
-        <!-- VAGA GARANTIDA POR IDA -->
-        <div v-else-if="statusVolta === 'GARANTIDA'" class="priority-guaranteed-box q-pa-sm rounded-borders">
+        <!-- PRIORIDADE DE RETORNO POR IDA -->
+        <div v-else-if="statusVolta === 'PRIORIDADE_RETORNO'" class="priority-guaranteed-box q-pa-sm rounded-borders">
           <div class="row items-center justify-between q-mb-xs">
             <div class="row items-center">
               <q-icon name="verified" color="positive" size="18px" class="q-mr-xs" />
-              <strong class="text-positive text-caption text-weight-bold">Prioridade de Ciclo Garantida</strong>
+              <strong class="text-positive text-caption text-weight-bold">Prioridade de Retorno</strong>
             </div>
             <q-badge color="positive" text-color="white" class="text-weight-bold">
-              ASSENTO ASSEGURADO
+              PRIORIDADE DE RETORNO
             </q-badge>
           </div>
           <div class="text-caption text-grey-4" style="font-size: 0.72rem;">
@@ -322,7 +322,7 @@ const totalColegasIda = ref(0)
 const totalColegasVolta = ref(0)
 
 // Estados de Prioridade e Fila de Espera (Modelo A)
-const statusVolta = ref('GARANTIDA')
+const statusVolta = ref('PRIORIDADE_RETORNO')
 const statusVoltaDisplay = ref('')
 const posicaoFila = ref(null)
 const vagasRemanescentes = ref(null)
@@ -422,7 +422,7 @@ const fetchPredicaoHoje = async () => {
     }
     totalColegasIda.value = data.total_colegas_ida || 0
     totalColegasVolta.value = data.total_colegas_volta || 0
-    statusVolta.value = data.status_volta || 'GARANTIDA'
+    statusVolta.value = data.status_volta || 'PRIORIDADE_RETORNO'
     statusVoltaDisplay.value = data.status_volta_display || ''
     posicaoFila.value = data.posicao_fila
     vagasRemanescentes.value = data.vagas_remanescentes
@@ -521,8 +521,8 @@ const toggleAndSave = async (tipo) => {
       })
     } else {
       const mensagemNotificacao = tipo === 'ida'
-        ? (vaiIda.value ? 'Ida confirmada! Sua presença foi reservada (Bairro ➔ Campus).' : 'Ida cancelada. Vaga liberada no trajeto de ida.')
-        : (vaiVolta.value ? 'Volta confirmada! Sua presença foi reservada (Campus ➔ Bairro).' : 'Volta cancelada. Vaga liberada no trajeto de volta.')
+        ? (vaiIda.value ? 'Intenção de ida registrada (Bairro ➔ Campus).' : 'Intenção de ida cancelada.')
+        : (vaiVolta.value ? 'Intenção de volta registrada (Campus ➔ Bairro).' : 'Intenção de volta cancelada.')
 
       $q.notify({
         type: 'positive',
